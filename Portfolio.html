@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Portfolio CSV Importer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .upload-area {
+            border: 2px dashed #007AFF;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+            background-color: #f8f9ff;
+            cursor: pointer;
+        }
+        .upload-area:hover {
+            background-color: #e8f0ff;
+        }
+        button {
+            background-color: #007AFF;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background-color: #0056CC;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .translation-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            max-height: 400px;
+            overflow-y: auto;
+            display: block;
+            border: 1px solid #ddd;
+        }
+        .translation-table thead {
+            display: table;
+            width: 100%;
+            table-layout: fixed;
+            background-color: #f8f9fa;
+        }
+        .translation-table tbody {
+            display: table;
+            width: 100%;
+            table-layout: fixed;
+        }
+        .translation-table th,
+        .translation-table td {
+            padding: 8px;
+            text-align: left;
+            border: 1px solid #ddd;
+            word-wrap: break-word;
+        }
+        .translation-table input {
+            width: 95%;
+            padding: 4px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+        .auto-suggested {
+            background-color: #e8f5e8;
+        }
+        .manual-needed {
+            background-color: #fff3cd;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+        }
+        .result-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        .result-table th,
+        .result-table td {
+            padding: 8px;
+            text-align: left;
+            border: 1px solid #ddd;
+        }
+        .result-table th {
+            background-color: #f8f9fa;
+        }
+        #fileInput {
+            display: none;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Simple Portfolio CSV Importer</h1>
+        <p>Upload your Avanza CSV and we'll translate broker symbols to Yahoo Finance tickers.</p>
+
+```
+    <!-- File Upload -->
+    <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+        <h3>Drop CSV file here or click to browse</h3>
+        <input type="file" id="fileInput" accept=".csv" onchange="handleFileSelect(event)">
+    </div>
+
+    <!-- Translation Section -->
+    <div class="section" id="translationSection" style="display: none;">
+        <h3>Symbol Translation</h3>
+        <p>Review and adjust the Yahoo Finance ticker mappings:</p>
+        
+        <table class="translation-table" id="translationTable">
+            <thead>
+                <tr>
+                    <th style="width: 30%;">Avanza Symbol</th>
+                    <th style="width: 30%;">Yahoo Ticker</th>
+                    <th style="width: 20%;">Shares</th>
+                    <th style="width: 20%;">Status</th>
+                </tr>
+            </thead>
+            <tbody id="translationTableBody">
+            </tbody>
+        </table>
+        
+        <button onclick="processTranslations()" id="processBtn">Generate Portfolio</button>
+    </div>
+
+    <!-- Results Section -->
+    <div class="section" id="resultsSection" style="display: none;">
+        <h3>Import Results</h3>
+        <div id="resultsContent"></div>
+        <button onclick="exportPortfolio()" style="background-color: #28a745;">Download for Portfolio Tool</button>
+    </div>
+</div>
+
+<script>
+    let csvData = [];
+    let portfolioData = [];
+    
+    // Simple, reliable symbol mappings
+    const symbolMappings = {
+        // Large caps - exact Avanza symbols
+        'INVE B': 'INVE-B.ST',
+        'NOVO B': 'NOVO-B.CO',
+        'RMSp': 'RMS.PA',
+        'AAK': 'AAK.ST',
+        'SWED A': 'SWED-A.ST',
+        'VOLV B': 'VOLV-B.ST',
+        'SKF B': 'SKF-B.ST',
+        '8TRA': '8TRA.ST',
+        'SEB A': 'SEB-A.ST',
+        'NDA SE': 'NDA-SE.ST',
+        'SHB A': 'SHB-A.ST',
+        'DANSKE': 'DANSKE.CO',
+        'ESSITY B': 'ESSITY-B.ST',
+        'HEXA B': 'HEXA-B.ST',
+        'INDU C': 'INDU-C.ST',
+        'IVGm': 'IVG.MI',
+        'BOL': 'BOL.ST',
+        'SECU B': 'SECU-B.ST',
+        'ATCO A': 'ATCO-A.ST',
+        'ATCO B': 'ATCO-B.ST',
+        'AZN': 'AZN.ST',
+        'CAMX': 'CAMX.ST',
+        'ABB': 'ABB.ST',
+        'ALFA': 'ALFA.ST',
+        'EPI B': 'EPI-B.ST',
+        'INVE A': 'INVE-A.ST',
+        // International stocks
+        'ASMLa': 'ASML.AS',
+        'MSFT': 'MSFT',
+        'MCp': 'MC.PA',
+        'V': 'V',
+        'ABBV': 'ABBV',
+        'JPM': 'JPM',
+        'PG': 'PG'
+    };
+
+    function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            parseCSV(e.target.result);
+        };
+        reader.readAsText(file);
+    }
+
+    function parseCSV(csvText) {
+        const lines = csvText.split('\n').filter(line => line.trim());
+        if (lines.length < 2) {
+            alert('CSV must have header and data rows');
+            return;
+        }
+
+        // Parse with semicolon delimiter (Avanza format)
+        const headers = lines[0].split(';');
+        
+        // Find required columns
+        const nameIndex = headers.findIndex(h => h.toLowerCase().includes('namn'));
+        const symbolIndex = headers.findIndex(h => h.toLowerCase().includes('kortnamn'));
+        const volumeIndex = headers.findIndex(h => h.toLowerCase().includes('volym'));
+        const isinIndex = headers.findIndex(h => h.toLowerCase().includes('isin'));
+
+        if (symbolIndex === -1 || volumeIndex === -1) {
+            alert('Could not find Kortnamn or Volym columns in CSV');
+            return;
+        }
+
+        // Process data rows
+        csvData = [];
+        for (let i = 1; i < lines.length; i++) {
+            const row = lines[i].split(';');
+            const symbol = row[symbolIndex]?.trim();
+            const volume = row[volumeIndex]?.trim();
+            const name = row[nameIndex]?.trim();
+            const isin = row[isinIndex]?.trim();
+
+            if (symbol && volume && !isNaN(parseFloat(volume)) && parseFloat(volume) > 0) {
+                csvData.push({
+                    symbol: symbol,
+                    name: name,
+                    volume: Math.round(parseFloat(volume)),
+                    isin: isin
+                });
+            }
+        }
+
+        // Group by symbol and sum volumes
+        const grouped = {};
+        csvData.forEach(item => {
+            if (grouped[item.symbol]) {
+                grouped[item.symbol].volume += item.volume;
+            } else {
+                grouped[item.symbol] = { ...item };
+            }
+        });
+
+        csvData = Object.values(grouped);
+        console.log('Parsed CSV data:', csvData);
+        
+        displayTranslationTable();
+    }
+
+    function displayTranslationTable() {
+        document.getElementById('translationSection').style.display = 'block';
+        const tbody = document.getElementById('translationTableBody');
+        tbody.innerHTML = '';
+
+        csvData.forEach((item, index) => {
+            const suggestion = getSuggestion(item.symbol, item.isin);
+            const row = document.createElement('tr');
+            
+            const statusClass = suggestion.auto ? 'auto-suggested' : 'manual-needed';
+            const statusText = suggestion.auto ? 'Auto-suggested' : 'Manual entry needed';
+            
+            row.innerHTML = `
+                <td><strong>${item.symbol}</strong><br><small>${item.name || ''}</small></td>
+                <td class="${statusClass}">
+                    <input type="text" value="${suggestion.ticker}" 
+                           onchange="updateTranslation(${index}, this.value)">
+                </td>
+                <td>${item.volume.toLocaleString()}</td>
+                <td><small>${statusText}</small></td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    function getSuggestion(symbol, isin) {
+        // 1. Check known mappings first
+        if (symbolMappings[symbol]) {
+            return { ticker: symbolMappings[symbol], auto: true };
+        }
+
+        // 2. Simple pattern matching based on ISIN country
+        if (isin && isin.length >= 2) {
+            const country = isin.substring(0, 2);
+            switch (country) {
+                case 'SE': // Sweden
+                    return { ticker: symbol + '.ST', auto: true };
+                case 'DK': // Denmark
+                    return { ticker: symbol + '.CO', auto: true };
+                case 'NO': // Norway
+                    return { ticker: symbol + '.OL', auto: true };
+                case 'FR': // France
+                    return { ticker: symbol + '.PA', auto: true };
+                case 'DE': // Germany
+                    return { ticker: symbol + '.DE', auto: true };
+                case 'IT': // Italy
+                    return { ticker: symbol + '.MI', auto: true };
+                case 'NL': // Netherlands
+                    return { ticker: symbol + '.AS', auto: true };
+                case 'GB': // UK
+                    return { ticker: symbol + '.L', auto: true };
+                case 'US': // US
+                    return { ticker: symbol, auto: true };
+            }
+        }
+
+        // 3. Default fallback
+        return { ticker: symbol + '.ST', auto: false };
+    }
+
+    function updateTranslation(index, newTicker) {
+        // Store the updated ticker - will be used in processing
+        csvData[index].yahooTicker = newTicker.trim();
+    }
+
+    function processTranslations() {
+        portfolioData = [];
+        
+        // Collect all translations from input fields
+        const inputs = document.querySelectorAll('#translationTableBody input');
+        inputs.forEach((input, index) => {
+            const ticker = input.value.trim();
+            const item = csvData[index];
+            
+            if (ticker && item) {
+                portfolioData.push({
+                    symbol: ticker,
+                    originalSymbol: item.symbol,
+                    shares: item.volume,
+                    name: item.name
+                });
+
+                // Learn this mapping for future use
+                if (!symbolMappings[item.symbol]) {
+                    symbolMappings[item.symbol] = ticker;
+                    localStorage.setItem('userSymbolMappings', JSON.stringify(symbolMappings));
+                }
+            }
+        });
+
+        displayResults();
+    }
+
+    function displayResults() {
+        document.getElementById('resultsSection').style.display = 'block';
+        
+        let html = `
+            <div class="success">
+                <h4>Successfully processed ${portfolioData.length} stocks</h4>
+            </div>
+            <table class="result-table">
+                <thead>
+                    <tr>
+                        <th>Yahoo Ticker</th>
+                        <th>Original Symbol</th>
+                        <th>Shares</th>
+                        <th>Company</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        portfolioData.forEach(item => {
+            html += `
+                <tr>
+                    <td><strong>${item.symbol}</strong></td>
+                    <td>${item.originalSymbol}</td>
+                    <td>${item.shares.toLocaleString()}</td>
+                    <td><small>${item.name || ''}</small></td>
+                </tr>
+            `;
+        });
+
+        html += '</tbody></table>';
+        document.getElementById('resultsContent').innerHTML = html;
+    }
+
+    function exportPortfolio() {
+        if (portfolioData.length === 0) {
+            alert('No portfolio data to export');
+            return;
+        }
+
+        // Create export format: SYMBOL,SHARES
+        const exportText = portfolioData
+            .map(item => `${item.symbol},${item.shares}`)
+            .join('\n');
+
+        // Download as text file
+        const blob = new Blob([exportText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'portfolio_import.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        alert(`Portfolio exported! ${portfolioData.length} positions ready for your portfolio tool.`);
+    }
+
+    // Load saved mappings on startup
+    const savedMappings = localStorage.getItem('userSymbolMappings');
+    if (savedMappings) {
+        Object.assign(symbolMappings, JSON.parse(savedMappings));
+    }
+</script>
+```
+
+</body>
+</html>
