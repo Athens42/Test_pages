@@ -4,11 +4,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portfolio Management Tool</title>
+    <title>Account-Based Portfolio Management Tool</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 20px auto;
             padding: 20px;
             background-color: #f5f5f5;
@@ -62,7 +62,7 @@
             width: 100%;
             border-collapse: collapse;
             margin: 20px 0;
-            max-height: 500px;
+            max-height: 600px;
             overflow-y: auto;
             display: block;
             border: 1px solid #ddd;
@@ -72,6 +72,9 @@
             width: 100%;
             table-layout: fixed;
             background-color: #f8f9fa;
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
         .categorization-table tbody {
             display: table;
@@ -91,6 +94,16 @@
             border: 1px solid #ccc;
             border-radius: 3px;
         }
+        .account-group {
+            background-color: #e3f2fd;
+            border-left: 3px solid #2196F3;
+        }
+        .stock-row {
+            background-color: white;
+        }
+        .stock-row:nth-child(even) {
+            background-color: #fafafa;
+        }
         .portfolio-summary {
             background-color: #f0f9ff;
             border: 2px solid #007AFF;
@@ -102,7 +115,7 @@
             background-color: white;
             border: 1px solid #ddd;
             border-radius: 5px;
-            padding: 10px;
+            padding: 15px;
             margin: 10px 0;
         }
         .portfolio-total {
@@ -122,7 +135,7 @@
         }
         .portfolio-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
             gap: 20px;
             margin: 20px 0;
         }
@@ -140,12 +153,34 @@
             border: 1px solid #ddd;
             border-radius: 4px;
         }
+        .account-summary {
+            background-color: #fff3cd;
+            border: 1px solid #ffeeba;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 15px 0;
+        }
+        .filter-controls {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .filter-controls select, .filter-controls input {
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Portfolio Management Tool</h1>
-        <p>Import your broker CSV, categorize stocks into portfolios, and track performance by category.</p>
+        <h1>Account-Based Portfolio Management Tool</h1>
+        <p>Import your broker CSV with account structure, then categorize account/stock combinations into portfolios.</p>
 
 ```
     <!-- Portfolio Configuration -->
@@ -155,7 +190,7 @@
         
         <div class="input-group">
             <label>Add New Portfolio Category:</label>
-            <input type="text" id="newPortfolioName" placeholder="e.g., Large Cap, Small Cap, Growth, etc.">
+            <input type="text" id="newPortfolioName" placeholder="e.g., Large Cap, Small Cap, Growth, Value, etc.">
             <button onclick="addPortfolioCategory()" style="margin-left: 10px;">Add Category</button>
         </div>
         
@@ -167,30 +202,59 @@
     <!-- File Upload -->
     <div class="upload-area" onclick="document.getElementById('fileInput').click()">
         <h3>Upload CSV File</h3>
-        <p>Drop your broker CSV file here or click to browse</p>
+        <p>Drop your broker CSV file here or click to browse<br>
+        <small>Expected format: Account Number, Stock Symbol, Company Name, Volume, etc.</small></p>
         <input type="file" id="fileInput" accept=".csv" onchange="handleFileSelect(event)">
+    </div>
+
+    <!-- Account Summary -->
+    <div class="section" id="accountSummary" style="display: none;">
+        <h3>Import Summary</h3>
+        <div id="accountSummaryContent"></div>
+    </div>
+
+    <!-- Filter Controls -->
+    <div class="filter-controls" id="filterControls" style="display: none;">
+        <label>Filter by Account: 
+            <select id="accountFilter" onchange="applyFilters()">
+                <option value="">All Accounts</option>
+            </select>
+        </label>
+        <label>Filter by Portfolio: 
+            <select id="portfolioFilter" onchange="applyFilters()">
+                <option value="">All Portfolios</option>
+            </select>
+        </label>
+        <label>Search Stock: 
+            <input type="text" id="stockSearch" placeholder="Search by symbol or name" onkeyup="applyFilters()">
+        </label>
+        <button onclick="clearFilters()">Clear Filters</button>
     </div>
 
     <!-- Stock Categorization -->
     <div class="section" id="categorizationSection" style="display: none;">
-        <h3>Stock Categorization</h3>
-        <p>Assign each stock to a portfolio category:</p>
+        <h3>Account/Stock Categorization</h3>
+        <p>Assign each account/stock combination to a portfolio category:</p>
         
         <table class="categorization-table" id="categorizationTable">
             <thead>
                 <tr>
-                    <th style="width: 20%;">Yahoo Ticker</th>
-                    <th style="width: 25%;">Company</th>
-                    <th style="width: 15%;">Shares</th>
-                    <th style="width: 20%;">Portfolio</th>
-                    <th style="width: 20%;">Status</th>
+                    <th style="width: 15%;">Account</th>
+                    <th style="width: 15%;">Yahoo Ticker</th>
+                    <th style="width: 20%;">Company</th>
+                    <th style="width: 12%;">Shares</th>
+                    <th style="width: 18%;">Portfolio</th>
+                    <th style="width: 20%;">Notes</th>
                 </tr>
             </thead>
             <tbody id="categorizationTableBody">
             </tbody>
         </table>
         
-        <button onclick="generatePortfolioReport()" id="generateBtn">Generate Portfolio Report</button>
+        <div style="margin-top: 15px;">
+            <button onclick="generatePortfolioReport()" id="generateBtn">Generate Portfolio Report</button>
+            <button onclick="bulkAssign()" style="background-color: #6c757d;">Bulk Assign Selected</button>
+        </div>
     </div>
 
     <!-- Portfolio Summary -->
@@ -205,7 +269,9 @@
     let csvData = [];
     let portfolioCategories = [];
     let categorizedStocks = [];
-    let portfolioAssignments = JSON.parse(localStorage.getItem('portfolioAssignments')) || {};
+    let portfolioAssignments = JSON.parse(localStorage.getItem('accountPortfolioAssignments')) || {};
+    let accounts = {};
+    let filteredData = [];
 
     // Symbol mappings (same as before)
     const symbolMappings = {
@@ -250,7 +316,7 @@
         if (savedCategories) {
             portfolioCategories = JSON.parse(savedCategories);
         } else {
-            portfolioCategories = ['Large Cap', 'Small Cap', 'International', 'Unassigned'];
+            portfolioCategories = ['Large Cap', 'Small Cap', 'Growth', 'Value', 'International', 'Unassigned'];
         }
         updatePortfolioDisplay();
     }
@@ -264,6 +330,7 @@
             nameInput.value = '';
             updatePortfolioDisplay();
             savePortfolioCategories();
+            updateFilters();
         }
     }
 
@@ -275,6 +342,7 @@
         portfolioCategories = portfolioCategories.filter(cat => cat !== name);
         updatePortfolioDisplay();
         savePortfolioCategories();
+        updateFilters();
     }
 
     function updatePortfolioDisplay() {
@@ -311,42 +379,77 @@
         const lines = csvText.split('\n').filter(line => line.trim());
         const headers = lines[0].split(';');
         
+        // Try to identify columns - more flexible approach
+        const accountIndex = headers.findIndex(h => 
+            h.toLowerCase().includes('konto') || 
+            h.toLowerCase().includes('account') ||
+            h.toLowerCase().includes('depot')
+        );
         const nameIndex = headers.findIndex(h => h.toLowerCase().includes('namn'));
         const symbolIndex = headers.findIndex(h => h.toLowerCase().includes('kortnamn'));
         const volumeIndex = headers.findIndex(h => h.toLowerCase().includes('volym'));
         const isinIndex = headers.findIndex(h => h.toLowerCase().includes('isin'));
 
+        if (accountIndex === -1) {
+            alert('Could not find account number column. Expected headers containing "konto", "account", or "depot"');
+            return;
+        }
+
         csvData = [];
+        accounts = {};
+
         for (let i = 1; i < lines.length; i++) {
             const row = lines[i].split(';');
+            const account = row[accountIndex]?.trim();
             const symbol = row[symbolIndex]?.trim();
             const volume = row[volumeIndex]?.trim();
             const name = row[nameIndex]?.trim();
             const isin = row[isinIndex]?.trim();
 
-            if (symbol && volume && !isNaN(parseFloat(volume)) && parseFloat(volume) > 0) {
-                csvData.push({
+            if (account && symbol && volume && !isNaN(parseFloat(volume)) && parseFloat(volume) > 0) {
+                const yahooTicker = getSuggestion(symbol, isin).ticker;
+                const accountStockKey = `${account}|${yahooTicker}`;
+                
+                const stockData = {
+                    account: account,
                     symbol: symbol,
                     name: name,
                     volume: Math.round(parseFloat(volume)),
                     isin: isin,
-                    yahooTicker: getSuggestion(symbol, isin).ticker
-                });
+                    yahooTicker: yahooTicker,
+                    accountStockKey: accountStockKey
+                };
+
+                // Check if this account/stock combination already exists
+                const existingIndex = csvData.findIndex(item => item.accountStockKey === accountStockKey);
+                if (existingIndex >= 0) {
+                    csvData[existingIndex].volume += stockData.volume;
+                } else {
+                    csvData.push(stockData);
+                }
+
+                // Track accounts
+                if (!accounts[account]) {
+                    accounts[account] = { stocks: [], totalVolume: 0 };
+                }
             }
         }
 
-        // Group by symbol and sum volumes
-        const grouped = {};
+        // Update account summaries
         csvData.forEach(item => {
-            if (grouped[item.yahooTicker]) {
-                grouped[item.yahooTicker].volume += item.volume;
-            } else {
-                grouped[item.yahooTicker] = { ...item };
+            if (!accounts[item.account].stocks.find(s => s.yahooTicker === item.yahooTicker)) {
+                accounts[item.account].stocks.push({
+                    yahooTicker: item.yahooTicker,
+                    name: item.name,
+                    volume: item.volume
+                });
             }
+            accounts[item.account].totalVolume += item.volume;
         });
 
-        csvData = Object.values(grouped);
+        displayAccountSummary();
         displayCategorizationTable();
+        updateFilters();
     }
 
     function getSuggestion(symbol, isin) {
@@ -372,41 +475,128 @@
         return { ticker: symbol + '.ST', auto: false };
     }
 
+    function displayAccountSummary() {
+        document.getElementById('accountSummary').style.display = 'block';
+        const content = document.getElementById('accountSummaryContent');
+        
+        let html = '<div class="account-summary">';
+        html += `<h4>Import Results</h4>`;
+        html += `<p><strong>Total Accounts:</strong> ${Object.keys(accounts).length}</p>`;
+        html += `<p><strong>Total Account/Stock Combinations:</strong> ${csvData.length}</p>`;
+        html += `<p><strong>Total Share Volume:</strong> ${csvData.reduce((sum, item) => sum + item.volume, 0).toLocaleString()}</p>`;
+        html += '</div>';
+
+        html += '<div style="max-height: 200px; overflow-y: auto; margin-top: 15px;">';
+        Object.keys(accounts).forEach(accountNum => {
+            const account = accounts[accountNum];
+            html += `
+                <div style="background: #f8f9fa; border: 1px solid #ddd; border-radius: 5px; padding: 10px; margin: 5px 0;">
+                    <strong>Account ${accountNum}</strong> - ${account.stocks.length} stocks, ${account.totalVolume.toLocaleString()} total shares
+                </div>
+            `;
+        });
+        html += '</div>';
+
+        content.innerHTML = html;
+    }
+
+    function updateFilters() {
+        const accountFilter = document.getElementById('accountFilter');
+        const portfolioFilter = document.getElementById('portfolioFilter');
+        
+        // Update account filter
+        accountFilter.innerHTML = '<option value="">All Accounts</option>';
+        Object.keys(accounts).forEach(account => {
+            accountFilter.innerHTML += `<option value="${account}">Account ${account}</option>`;
+        });
+
+        // Update portfolio filter
+        portfolioFilter.innerHTML = '<option value="">All Portfolios</option>';
+        portfolioCategories.forEach(category => {
+            portfolioFilter.innerHTML += `<option value="${category}">${category}</option>`;
+        });
+
+        document.getElementById('filterControls').style.display = 'block';
+    }
+
+    function applyFilters() {
+        const accountFilter = document.getElementById('accountFilter').value;
+        const portfolioFilter = document.getElementById('portfolioFilter').value;
+        const stockSearch = document.getElementById('stockSearch').value.toLowerCase();
+
+        filteredData = csvData.filter(item => {
+            const matchesAccount = !accountFilter || item.account === accountFilter;
+            const assignment = portfolioAssignments[item.accountStockKey] || 'Unassigned';
+            const matchesPortfolio = !portfolioFilter || assignment === portfolioFilter;
+            const matchesSearch = !stockSearch || 
+                item.yahooTicker.toLowerCase().includes(stockSearch) || 
+                (item.name && item.name.toLowerCase().includes(stockSearch));
+            
+            return matchesAccount && matchesPortfolio && matchesSearch;
+        });
+
+        displayCategorizationTable();
+    }
+
+    function clearFilters() {
+        document.getElementById('accountFilter').value = '';
+        document.getElementById('portfolioFilter').value = '';
+        document.getElementById('stockSearch').value = '';
+        applyFilters();
+    }
+
     function displayCategorizationTable() {
         document.getElementById('categorizationSection').style.display = 'block';
         const tbody = document.getElementById('categorizationTableBody');
         tbody.innerHTML = '';
 
-        csvData.forEach((item, index) => {
+        const dataToShow = filteredData.length > 0 ? filteredData : csvData;
+
+        dataToShow.forEach((item, index) => {
             const row = document.createElement('tr');
-            const savedAssignment = portfolioAssignments[item.yahooTicker] || 'Unassigned';
+            const savedAssignment = portfolioAssignments[item.accountStockKey] || 'Unassigned';
             
+            row.className = 'stock-row';
             row.innerHTML = `
+                <td><strong>${item.account}</strong></td>
                 <td><strong>${item.yahooTicker}</strong></td>
                 <td>${item.name || item.symbol}</td>
                 <td>${item.volume.toLocaleString()}</td>
                 <td>
-                    <select onchange="updateStockAssignment('${item.yahooTicker}', this.value)">
+                    <select onchange="updateStockAssignment('${item.accountStockKey}', this.value)">
                         ${portfolioCategories.map(cat => 
                             `<option value="${cat}" ${cat === savedAssignment ? 'selected' : ''}>${cat}</option>`
                         ).join('')}
                     </select>
                 </td>
-                <td><small>Auto-suggested</small></td>
+                <td><small>Account/Stock combo</small></td>
             `;
             tbody.appendChild(row);
         });
     }
 
-    function updateStockAssignment(ticker, portfolio) {
-        portfolioAssignments[ticker] = portfolio;
-        localStorage.setItem('portfolioAssignments', JSON.stringify(portfolioAssignments));
+    function updateStockAssignment(accountStockKey, portfolio) {
+        portfolioAssignments[accountStockKey] = portfolio;
+        localStorage.setItem('accountPortfolioAssignments', JSON.stringify(portfolioAssignments));
+    }
+
+    function bulkAssign() {
+        const selectedPortfolio = prompt("Enter portfolio name to assign to visible rows:");
+        if (selectedPortfolio && portfolioCategories.includes(selectedPortfolio)) {
+            const dataToUpdate = filteredData.length > 0 ? filteredData : csvData;
+            dataToUpdate.forEach(item => {
+                portfolioAssignments[item.accountStockKey] = selectedPortfolio;
+            });
+            localStorage.setItem('accountPortfolioAssignments', JSON.stringify(portfolioAssignments));
+            displayCategorizationTable();
+            alert(`${dataToUpdate.length} account/stock combinations assigned to ${selectedPortfolio}`);
+        }
     }
 
     function generatePortfolioReport() {
         categorizedStocks = csvData.map(item => ({
             ...item,
-            portfolio: portfolioAssignments[item.yahooTicker] || 'Unassigned'
+            portfolio: portfolioAssignments[item.accountStockKey] || 'Unassigned'
         }));
 
         displayPortfolioSummary();
@@ -415,7 +605,7 @@
     function displayPortfolioSummary() {
         document.getElementById('portfolioSummary').style.display = 'block';
         
-        // Group stocks by portfolio
+        // Group by portfolio
         const portfolioGroups = {};
         categorizedStocks.forEach(stock => {
             if (!portfolioGroups[stock.portfolio]) {
@@ -430,18 +620,20 @@
             const stocks = portfolioGroups[portfolioName];
             const stockCount = stocks.length;
             const shareCount = stocks.reduce((sum, stock) => sum + stock.volume, 0);
+            const accountCount = new Set(stocks.map(s => s.account)).size;
             
             html += `
                 <div class="portfolio-item">
                     <h4>${portfolioName}</h4>
-                    <p><strong>Stocks:</strong> ${stockCount}</p>
+                    <p><strong>Accounts:</strong> ${accountCount}</p>
+                    <p><strong>Account/Stock Combinations:</strong> ${stockCount}</p>
                     <p><strong>Total Shares:</strong> ${shareCount.toLocaleString()}</p>
                     <div style="max-height: 200px; overflow-y: auto;">
             `;
             
             stocks.forEach(stock => {
                 html += `<div style="font-size: 0.9em; padding: 2px 0;">
-                    <strong>${stock.yahooTicker}</strong> - ${stock.volume.toLocaleString()} shares
+                    <strong>Acc ${stock.account}</strong>: ${stock.yahooTicker} - ${stock.volume.toLocaleString()} shares
                 </div>`;
             });
             
@@ -453,7 +645,8 @@
         html += `
             <div class="success">
                 <h4>Portfolio Summary</h4>
-                <p><strong>Total Stocks:</strong> ${categorizedStocks.length}</p>
+                <p><strong>Total Account/Stock Combinations:</strong> ${categorizedStocks.length}</p>
+                <p><strong>Total Accounts:</strong> ${Object.keys(accounts).length}</p>
                 <p><strong>Portfolio Categories:</strong> ${Object.keys(portfolioGroups).length}</p>
                 <p><strong>Last Updated:</strong> ${new Date().toLocaleString()}</p>
             </div>
@@ -468,10 +661,10 @@
             return;
         }
 
-        // Create export in multiple formats
-        let csvExport = 'Portfolio,Ticker,Company,Shares\n';
+        // Create detailed export
+        let csvExport = 'Portfolio,Account,Ticker,Company,Shares,AccountStockKey\n';
         categorizedStocks.forEach(stock => {
-            csvExport += `${stock.portfolio},${stock.yahooTicker},"${stock.name || stock.symbol}",${stock.volume}\n`;
+            csvExport += `${stock.portfolio},${stock.account},${stock.yahooTicker},"${stock.name || stock.symbol}",${stock.volume},${stock.accountStockKey}\n`;
         });
 
         const blob = new Blob([csvExport], { type: 'text/csv' });
@@ -479,13 +672,13 @@
         
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'portfolio_categorized.csv';
+        a.download = 'account_portfolio_categorized.csv';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        alert(`Portfolio exported! ${categorizedStocks.length} stocks organized by category.`);
+        alert(`Portfolio exported! ${categorizedStocks.length} account/stock combinations organized by category.`);
     }
 
     // Initialize on page load
