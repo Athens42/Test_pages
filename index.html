@@ -545,7 +545,8 @@
         document.getElementById('accountFilter').value = '';
         document.getElementById('portfolioFilter').value = '';
         document.getElementById('stockSearch').value = '';
-        applyFilters();
+        filteredData = []; // Reset filtered data to show all
+        displayCategorizationTable();
     }
 
     function displayCategorizationTable() {
@@ -580,9 +581,462 @@
 
     function updateStockAssignment(accountStockKey, portfolio) {
         portfolioAssignments[accountStockKey] = portfolio;
-        localStorage.setItem('accountPortfolioAssignments', JSON.stringify(portfolioAssignments));
+        // We'll save this to IndexedDB when user clicks "Save to Database"
     }
 
+    function bulkAssign() {
+        const selectedPortfolio = prompt("Enter portfolio name to assign to visible rows:");
+        if (selectedPortfolio && portfolioCategories.includes(selectedPortfolio)) {
+            const dataToUpdate = filteredData.length > 0 ? filteredData : csvData;
+            dataToUpdate.forEach(item => {
+                portfolioAssignments[item.accountStockKey] = selectedPortfolio;
+            });
+            displayCategorizationTable();
+            alert(`${dataToUpdate.length} account/stock combinations assigned to ${selectedPortfolio}`);
+        }
+    }
+
+    // Database operations
+    async function saveToDatabase() {
+        try {
+            const transaction = db.transaction(['holdings'], 'readwrite');
+            const store = transaction.objectStore('holdings');
+            
+            // Clear existing holdings
+            await store.clear();
+            
+            // Save current holdings
+            for (const item of csvData) {
+                const holding = {
+                    account: item.account,
+                    ticker: item.yahooTicker,
+                    symbol: item.symbol,
+                    name: item.name,
+                    shares: item.volume,
+                    portfolio: portfolioAssignments[item.accountStockKey] || 'Unassigned',
+                    isin: item.isin,
+                    lastUpdated: new Date().toISOString()
+                };
+                
+                await store.add(holding);
+            }
+            
+            alert('Portfolio data saved to database successfully!');
+            document.getElementById('dbStatusText').textContent = `Database updated - ${csvData.length} holdings saved`;
+            
+        } catch (error) {
+            console.error('Error saving to database:', error);
+            alert('Error saving to database: ' + error.message);
+        }
+    }
+
+    async function loadFromDatabase() {
+        try {
+            const transaction = db.transaction(['holdings'], 'readonly');
+            const store = transaction.objectStore('holdings');
+            const request = store.getAll();
+            
+            request.onsuccess = () => {
+                const holdings = request.result;
+                if (holdings.length > 0) {
+                    // Convert back to our working format
+                    csvData = holdings.map(holding => ({
+                        account: holding.account,
+                        symbol: holding.symbol,
+                        name: holding.name,
+                        volume: holding.shares,
+                        isin: holding.isin,
+                        yahooTicker: holding.ticker,
+                        accountStockKey: `${holding.account}|${holding.ticker}`
+                    }));
+                    
+                    // Rebuild portfolio assignments
+                    portfolioAssignments = {};
+                    holdings.forEach(holding => {
+                        portfolioAssignments[`${holding.account}|${holding.ticker}`] = holding.portfolio;
+                    });
+                    
+                    // Rebuild accounts object
+                    accounts = {};
+                    csvData.forEach(item => {
+                        if (!accounts[item.account]) {
+                            accounts[item.account] = { stocks: [], totalVolume: 0 };
+                        }
+                        accounts[item.account].stocks.push({
+                            yahooTicker: item.yahooTicker,
+                            name: item.name,
+                            volume: item.volume
+                        });
+                        accounts[item.account].totalVolume += item.volume;
+                    });
+                    
+                    displayAccountSummary();
+                    displayCategorizationTable();
+                    updateFilters();
+                    
+                    document.getElementById('dbStatusText').textContent = `Loaded ${holdings.length} holdings from database`;
+                }
+            };
+            
+        } catch (error) {
+            console.error('Error loading from database:', error);
+        }
+    }
+
+    async function createPortfolioSnapshot() {
+        try {
+            const transaction = db.transaction(['snapshots'], 'readwrite');
+            const store = transaction.objectStore('snapshots');
+            
+            // Group by portfolio for snapshot
+            const portfolioGroups = {};
+            categorizedStocks.forEach(stock => {
+                if (!portfolioGroups[stock.portfolio]) {
+                    portfolioGroups[stock.portfolio] = {
+                        stocks: [],
+                        totalShares: 0,
+                        stockCount: 0
+                    };
+                }
+                portfolioGroups[stock.portfolio].stocks.push({
+                    account: stock.account,
+                    ticker: stock.yahooTicker,
+                    name: stock.name,
+                    shares: stock.volume
+                });
+                portfolioGroups[stock.portfolio].totalShares += stock.volume;
+                portfolioGroups[stock.portfolio].stockCount++;
+            });
+            
+            // Create snapshot for each portfolio
+            const snapshotDate = new Date().toISOString();
+            for (const [portfolioName, data] of Object.entries(portfolioGroups)) {
+                const snapshot = {
+                    date: snapshotDate,
+                    portfolio: portfolioName,
+                    stockCount: data.stockCount,
+                    totalShares: data.totalShares,
+                    holdings: data.stocks,
+                    accounts: new Set(data.stocks.map(s => s.account)).size
+                };
+                
+                await store.add(snapshot);
+            }
+            
+            alert(`Portfolio snapshot created for ${Object.keys(portfolioGroups).length} portfolios`);
+            
+        } catch (error) {
+            console.error('Error creating snapshot:', error);
+            alert('Error creating snapshot: ' + error.message);
+        }
+    }
+
+    function generatePortfolioReport() {
+        categorizedStocks = csvData.map(item => ({
+            ...item,
+            portfolio: portfolioAssignments[item.accountStockKey] || 'Unassigned'
+        }));
+
+        displayPortfolioSummary();
+    }
+
+    function displayPortfolioSummary() {
+        document.getElementById('portfolioSummary').style.display = 'block';
+        
+        const portfolioGroups = {};
+        categorizedStocks.forEach(stock => {
+            if (!portfolioGroups[stock.portfolio]) {
+                portfolioGroups[stock.portfolio] = [];
+            }
+            portfolioGroups[stock.portfolio].push(stock);
+        });
+
+        let html = '<div class="portfolio-grid">';
+        
+        Object.keys(portfolioGroups).forEach(portfolioName => {
+            const stocks = portfolioGroups[portfolioName];
+            const stockCount = stocks.length;
+            const shareCount = stocks.reduce((sum, stock) => sum + stock.volume, 0);
+            const accountCount = new Set(stocks.map(s => s.account)).size;
+            
+            html += `
+                <div class="portfolio-item">
+                    <h4>${portfolioName}</h4>
+                    <p><strong>Accounts:</strong> ${accountCount}</p>
+                    <p><strong>Account/Stock Combinations:</strong> ${stockCount}</p>
+                    <p><strong>Total Shares:</strong> ${shareCount.toLocaleString()}</p>
+                    <div style="max-height: 200px; overflow-y: auto;">
+            `;
+            
+            stocks.forEach(stock => {
+                html += `<div style="font-size: 0.9em; padding: 2px 0;">
+                    <strong>Acc ${stock.account}</strong>: ${stock.yahooTicker} - ${stock.volume.toLocaleString()} shares
+                </div>`;
+            });
+            
+            html += '</div></div>';
+        });
+
+        html += '</div>';
+        
+        html += `
+            <div class="success">
+                <h4>Portfolio Summary</h4>
+                <p><strong>Total Account/Stock Combinations:</strong> ${categorizedStocks.length}</p>
+                <p><strong>Total Accounts:</strong> ${Object.keys(accounts).length}</p>
+                <p><strong>Portfolio Categories:</strong> ${Object.keys(portfolioGroups).length}</p>
+                <p><strong>Last Updated:</strong> ${new Date().toLocaleString()}</p>
+            </div>
+        `;
+
+        document.getElementById('portfolioResults').innerHTML = html;
+    }
+
+    function exportPortfolioData() {
+        if (categorizedStocks.length === 0) {
+            alert('No portfolio data to export');
+            return;
+        }
+
+        let csvExport = 'Portfolio,Account,Ticker,Company,Shares,AccountStockKey\n';
+        categorizedStocks.forEach(stock => {
+            csvExport += `${stock.portfolio},${stock.account},${stock.yahooTicker},"${stock.name || stock.symbol}",${stock.volume},${stock.accountStockKey}\n`;
+        });
+
+        const blob = new Blob([csvExport], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'account_portfolio_categorized.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        alert(`Portfolio exported! ${categorizedStocks.length} account/stock combinations organized by category.`);
+    }
+
+    // Analytics functions
+    async function loadAnalytics() {
+        try {
+            const transaction = db.transaction(['holdings', 'snapshots'], 'readonly');
+            const holdingsStore = transaction.objectStore('holdings');
+            const snapshotsStore = transaction.objectStore('snapshots');
+            
+            // Get current holdings
+            const holdingsRequest = holdingsStore.getAll();
+            holdingsRequest.onsuccess = async () => {
+                const holdings = holdingsRequest.result;
+                
+                // Get snapshots for trend analysis
+                const snapshotsRequest = snapshotsStore.getAll();
+                snapshotsRequest.onsuccess = () => {
+                    const snapshots = snapshotsRequest.result;
+                    displayAnalytics(holdings, snapshots);
+                };
+            };
+            
+        } catch (error) {
+            console.error('Error loading analytics:', error);
+            document.getElementById('analyticsGrid').innerHTML = '<p>Error loading analytics data</p>';
+        }
+    }
+
+    function displayAnalytics(holdings, snapshots) {
+        const analyticsGrid = document.getElementById('analyticsGrid');
+        
+        if (holdings.length === 0) {
+            analyticsGrid.innerHTML = '<p>No portfolio data available. Please import and save data first.</p>';
+            return;
+        }
+        
+        // Calculate KPIs
+        const totalStocks = holdings.length;
+        const totalAccounts = new Set(holdings.map(h => h.account)).size;
+        const totalShares = holdings.reduce((sum, h) => sum + h.shares, 0);
+        const portfolioCount = new Set(holdings.map(h => h.portfolio)).size;
+        
+        // Portfolio distribution
+        const portfolioDistribution = {};
+        holdings.forEach(holding => {
+            if (!portfolioDistribution[holding.portfolio]) {
+                portfolioDistribution[holding.portfolio] = { stocks: 0, shares: 0 };
+            }
+            portfolioDistribution[holding.portfolio].stocks++;
+            portfolioDistribution[holding.portfolio].shares += holding.shares;
+        });
+        
+        // Generate KPI cards
+        let html = `
+            <div class="kpi-card">
+                <div class="kpi-value">${totalAccounts}</div>
+                <div class="kpi-label">Total Accounts</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">${totalStocks}</div>
+                <div class="kpi-label">Holdings</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">${totalShares.toLocaleString()}</div>
+                <div class="kpi-label">Total Shares</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">${portfolioCount}</div>
+                <div class="kpi-label">Portfolios</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">${snapshots.length}</div>
+                <div class="kpi-label">Snapshots</div>
+            </div>
+        `;
+        
+        analyticsGrid.innerHTML = html;
+        
+        // Detailed portfolio analytics
+        let detailHtml = '<h4>Portfolio Distribution</h4><div class="portfolio-grid">';
+        
+        Object.keys(portfolioDistribution).forEach(portfolio => {
+            const data = portfolioDistribution[portfolio];
+            const sharePercentage = ((data.shares / totalShares) * 100).toFixed(1);
+            const stockPercentage = ((data.stocks / totalStocks) * 100).toFixed(1);
+            
+            detailHtml += `
+                <div class="portfolio-item">
+                    <h5>${portfolio}</h5>
+                    <p><strong>Holdings:</strong> ${data.stocks} (${stockPercentage}%)</p>
+                    <p><strong>Shares:</strong> ${data.shares.toLocaleString()} (${sharePercentage}%)</p>
+                    <p><strong>Avg Shares/Holding:</strong> ${Math.round(data.shares / data.stocks).toLocaleString()}</p>
+                </div>
+            `;
+        });
+        
+        detailHtml += '</div>';
+        
+        // Snapshot trend analysis
+        if (snapshots.length > 0) {
+            detailHtml += '<h4>Historical Trends</h4>';
+            detailHtml += '<p>Historical analysis of portfolio snapshots:</p>';
+            
+            const snapshotsByPortfolio = {};
+            snapshots.forEach(snapshot => {
+                if (!snapshotsByPortfolio[snapshot.portfolio]) {
+                    snapshotsByPortfolio[snapshot.portfolio] = [];
+                }
+                snapshotsByPortfolio[snapshot.portfolio].push(snapshot);
+            });
+            
+            detailHtml += '<div class="portfolio-grid">';
+            Object.keys(snapshotsByPortfolio).forEach(portfolio => {
+                const portfolioSnapshots = snapshotsByPortfolio[portfolio].sort((a, b) => new Date(a.date) - new Date(b.date));
+                const latest = portfolioSnapshots[portfolioSnapshots.length - 1];
+                const oldest = portfolioSnapshots[0];
+                
+                detailHtml += `
+                    <div class="portfolio-item">
+                        <h5>${portfolio} Trend</h5>
+                        <p><strong>Snapshots:</strong> ${portfolioSnapshots.length}</p>
+                        <p><strong>Latest:</strong> ${latest.stockCount} holdings, ${latest.totalShares.toLocaleString()} shares</p>
+                        <p><strong>First:</strong> ${oldest.stockCount} holdings, ${oldest.totalShares.toLocaleString()} shares</p>
+                        <p><strong>Change:</strong> ${latest.stockCount - oldest.stockCount} holdings, ${(latest.totalShares - oldest.totalShares).toLocaleString()} shares</p>
+                    </div>
+                `;
+            });
+            detailHtml += '</div>';
+        }
+        
+        document.getElementById('portfolioAnalytics').innerHTML = detailHtml;
+    }
+
+    async function loadHistoricalData() {
+        try {
+            const transaction = db.transaction(['snapshots'], 'readonly');
+            const store = transaction.objectStore('snapshots');
+            const request = store.getAll();
+            
+            request.onsuccess = () => {
+                const snapshots = request.result;
+                displayHistoricalData(snapshots);
+            };
+            
+        } catch (error) {
+            console.error('Error loading historical data:', error);
+            document.getElementById('historicalSummary').innerHTML = '<p>Error loading historical data</p>';
+        }
+    }
+
+    function displayHistoricalData(snapshots) {
+        const historicalSummary = document.getElementById('historicalSummary');
+        
+        if (snapshots.length === 0) {
+            historicalSummary.innerHTML = '<p>No historical snapshots available. Create snapshots from the Setup tab to track changes over time.</p>';
+            return;
+        }
+        
+        // Sort snapshots by date
+        snapshots.sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        let html = `<h4>Portfolio Snapshots (${snapshots.length} total)</h4>`;
+        html += '<div style="max-height: 400px; overflow-y: auto;">';
+        
+        const snapshotsByDate = {};
+        snapshots.forEach(snapshot => {
+            const dateKey = new Date(snapshot.date).toLocaleDateString();
+            if (!snapshotsByDate[dateKey]) {
+                snapshotsByDate[dateKey] = [];
+            }
+            snapshotsByDate[dateKey].push(snapshot);
+        });
+        
+        Object.keys(snapshotsByDate).forEach(date => {
+            const daySnapshots = snapshotsByDate[date];
+            html += `
+                <div style="background: #f8f9fa; border: 1px solid #ddd; border-radius: 5px; padding: 15px; margin: 10px 0;">
+                    <h5>${date}</h5>
+            `;
+            
+            daySnapshots.forEach(snapshot => {
+                html += `
+                    <div style="margin: 5px 0; padding: 5px; background: white; border-radius: 3px;">
+                        <strong>${snapshot.portfolio}</strong> - 
+                        ${snapshot.stockCount} holdings, 
+                        ${snapshot.totalShares.toLocaleString()} shares, 
+                        ${snapshot.accounts} accounts
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+        });
+        
+        html += '</div>';
+        historicalSummary.innerHTML = html;
+    }
+
+    // Initialize application
+    async function initApp() {
+        try {
+            await initDatabase();
+            await loadPortfolioCategories();
+            await loadFromDatabase(); // Try to load existing data
+        } catch (error) {
+            console.error('Error initializing app:', error);
+            document.getElementById('dbStatusText').textContent = 'Error initializing database';
+        }
+    }
+
+    // Start the application
+    window.addEventListener('load', initApp);
+</script>
+```
+
+</body>
+</html>) {
+            portfolioAssignments[accountStockKey] = portfolio;
+            localStorage.setItem('accountPortfolioAssignments', JSON.stringify(portfolioAssignments));
+        }
+
+```
     function bulkAssign() {
         const selectedPortfolio = prompt("Enter portfolio name to assign to visible rows:");
         if (selectedPortfolio && portfolioCategories.includes(selectedPortfolio)) {
