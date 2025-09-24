@@ -420,19 +420,29 @@
 
     // Initialize localStorage-based storage
     function initStorage() {
+        console.log('Starting storage initialization...');
+        
         try {
             // Test localStorage availability
             const testKey = 'portfolio_test';
             localStorage.setItem(testKey, 'test');
+            const testValue = localStorage.getItem(testKey);
             localStorage.removeItem(testKey);
             
+            console.log('localStorage test successful');
             document.getElementById('storageStatusText').textContent = 'Local storage ready';
             
             // Load existing data
+            console.log('Loading portfolio categories...');
             loadPortfolioCategories();
+            
+            console.log('Loading portfolio data...');
             loadPortfolioData();
+            
+            console.log('Loading snapshots...');
             loadSnapshots();
             
+            console.log('Storage initialization complete');
             return true;
         } catch (error) {
             console.error('LocalStorage not available:', error);
@@ -791,5 +801,395 @@
             if (holdings) {
                 const holdingsData = JSON.parse(holdings);
                 // Convert back to working format if needed
-                csvData = holdingsData.
+                csvData = holdingsData.map(item => ({
+                    account: item.account,
+                    symbol: item.symbol,
+                    name: item.name,
+                    volume: item.volume,
+                    isin: item.isin,
+                    yahooTicker: item.yahooTicker,
+                    accountStockKey: item.accountStockKey
+                }));
+                
+                const accountsData = localStorage.getItem('accountsData');
+                if (accountsData) {
+                    accounts = JSON.parse(accountsData);
+                }
+                
+                if (csvData.length > 0) {
+                    displayAccountSummary();
+                    displayCategorizationTable();
+                    updateFilters();
+                    document.getElementById('storageStatusText').textContent = `Loaded ${csvData.length} holdings from storage`;
+                }
+            }
+            
+        } catch (error) {
+            console.error('Error loading portfolio data:', error);
+        }
+    }
+
+    function loadSnapshots() {
+        try {
+            const snapshots = localStorage.getItem('portfolioSnapshots');
+            if (snapshots) {
+                portfolioSnapshots = JSON.parse(snapshots);
+            }
+        } catch (error) {
+            console.error('Error loading snapshots:', error);
+            portfolioSnapshots = [];
+        }
+    }
+
+    function createPortfolioSnapshot() {
+        try {
+            // Group by portfolio for snapshot
+            const portfolioGroups = {};
+            categorizedStocks.forEach(stock => {
+                if (!portfolioGroups[stock.portfolio]) {
+                    portfolioGroups[stock.portfolio] = {
+                        stocks: [],
+                        totalShares: 0,
+                        stockCount: 0
+                    };
+                }
+                portfolioGroups[stock.portfolio].stocks.push({
+                    account: stock.account,
+                    ticker: stock.yahooTicker,
+                    name: stock.name,
+                    shares: stock.volume
+                });
+                portfolioGroups[stock.portfolio].totalShares += stock.volume;
+                portfolioGroups[stock.portfolio].stockCount++;
+            });
+            
+            // Create snapshot with timestamp
+            const snapshotDate = new Date().toISOString();
+            const snapshot = {
+                date: snapshotDate,
+                portfolios: portfolioGroups,
+                totalStocks: categorizedStocks.length,
+                totalAccounts: Object.keys(accounts).length,
+                totalShares: categorizedStocks.reduce((sum, stock) => sum + stock.volume, 0)
+            };
+            
+            portfolioSnapshots.push(snapshot);
+            localStorage.setItem('portfolioSnapshots', JSON.stringify(portfolioSnapshots));
+            
+            alert(`Portfolio snapshot created with ${Object.keys(portfolioGroups).length} portfolios`);
+            
+        } catch (error) {
+            console.error('Error creating snapshot:', error);
+            alert('Error creating snapshot: ' + error.message);
+        }
+    }
+
+    function generatePortfolioReport() {
+        categorizedStocks = csvData.map(item => ({
+            ...item,
+            portfolio: portfolioAssignments[item.accountStockKey] || 'Unassigned'
+        }));
+
+        displayPortfolioSummary();
+    }
+
+    function displayPortfolioSummary() {
+        document.getElementById('portfolioSummary').style.display = 'block';
+        
+        const portfolioGroups = {};
+        categorizedStocks.forEach(stock => {
+            if (!portfolioGroups[stock.portfolio]) {
+                portfolioGroups[stock.portfolio] = [];
+            }
+            portfolioGroups[stock.portfolio].push(stock);
+        });
+
+        let html = '<div class="portfolio-grid">';
+        
+        Object.keys(portfolioGroups).forEach(portfolioName => {
+            const stocks = portfolioGroups[portfolioName];
+            const stockCount = stocks.length;
+            const shareCount = stocks.reduce((sum, stock) => sum + stock.volume, 0);
+            const accountCount = new Set(stocks.map(s => s.account)).size;
+            
+            html += `
+                <div class="portfolio-item">
+                    <h4>${portfolioName}</h4>
+                    <p><strong>Accounts:</strong> ${accountCount}</p>
+                    <p><strong>Account/Stock Combinations:</strong> ${stockCount}</p>
+                    <p><strong>Total Shares:</strong> ${shareCount.toLocaleString()}</p>
+                    <div style="max-height: 200px; overflow-y: auto;">
+            `;
+            
+            stocks.forEach(stock => {
+                html += `<div style="font-size: 0.9em; padding: 2px 0;">
+                    <strong>Acc ${stock.account}</strong>: ${stock.yahooTicker} - ${stock.volume.toLocaleString()} shares
+                </div>`;
+            });
+            
+            html += '</div></div>';
+        });
+
+        html += '</div>';
+        
+        html += `
+            <div class="success">
+                <h4>Portfolio Summary</h4>
+                <p><strong>Total Account/Stock Combinations:</strong> ${categorizedStocks.length}</p>
+                <p><strong>Total Accounts:</strong> ${Object.keys(accounts).length}</p>
+                <p><strong>Portfolio Categories:</strong> ${Object.keys(portfolioGroups).length}</p>
+                <p><strong>Last Updated:</strong> ${new Date().toLocaleString()}</p>
+            </div>
+        `;
+
+        document.getElementById('portfolioResults').innerHTML = html;
+    }
+
+    function exportPortfolioData() {
+        if (categorizedStocks.length === 0) {
+            alert('No portfolio data to export');
+            return;
+        }
+
+        let csvExport = 'Portfolio,Account,Ticker,Company,Shares,AccountStockKey\n';
+        categorizedStocks.forEach(stock => {
+            csvExport += `${stock.portfolio},${stock.account},${stock.yahooTicker},"${stock.name || stock.symbol}",${stock.volume},${stock.accountStockKey}\n`;
+        });
+
+        const blob = new Blob([csvExport], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'account_portfolio_categorized.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        alert(`Portfolio exported! ${categorizedStocks.length} account/stock combinations organized by category.`);
+    }
+
+    // Analytics functions
+    function loadAnalytics() {
+        try {
+            const holdings = localStorage.getItem('portfolioHoldings');
+            if (!holdings || JSON.parse(holdings).length === 0) {
+                document.getElementById('analyticsGrid').innerHTML = '<p>No portfolio data available. Please import and save data first.</p>';
+                return;
+            }
+            
+            const holdingsData = JSON.parse(holdings);
+            displayAnalytics(holdingsData, portfolioSnapshots);
+            
+        } catch (error) {
+            console.error('Error loading analytics:', error);
+            document.getElementById('analyticsGrid').innerHTML = '<p>Error loading analytics data</p>';
+        }
+    }
+
+    function displayAnalytics(holdings, snapshots) {
+        const analyticsGrid = document.getElementById('analyticsGrid');
+        
+        if (holdings.length === 0) {
+            analyticsGrid.innerHTML = '<p>No portfolio data available. Please import and save data first.</p>';
+            return;
+        }
+        
+        // Calculate KPIs
+        const totalStocks = holdings.length;
+        const totalAccounts = new Set(holdings.map(h => h.account)).size;
+        const totalShares = holdings.reduce((sum, h) => sum + h.volume, 0);
+        const portfolioCount = new Set(holdings.map(h => h.portfolio)).size;
+        
+        // Portfolio distribution
+        const portfolioDistribution = {};
+        holdings.forEach(holding => {
+            if (!portfolioDistribution[holding.portfolio]) {
+                portfolioDistribution[holding.portfolio] = { stocks: 0, shares: 0 };
+            }
+            portfolioDistribution[holding.portfolio].stocks++;
+            portfolioDistribution[holding.portfolio].shares += holding.volume;
+        });
+        
+        // Generate KPI cards
+        let html = `
+            <div class="kpi-card">
+                <div class="kpi-value">${totalAccounts}</div>
+                <div class="kpi-label">Total Accounts</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">${totalStocks}</div>
+                <div class="kpi-label">Holdings</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">${totalShares.toLocaleString()}</div>
+                <div class="kpi-label">Total Shares</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">${portfolioCount}</div>
+                <div class="kpi-label">Portfolios</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">${snapshots.length}</div>
+                <div class="kpi-label">Snapshots</div>
+            </div>
+        `;
+        
+        analyticsGrid.innerHTML = html;
+        
+        // Detailed portfolio analytics
+        let detailHtml = '<h4>Portfolio Distribution</h4><div class="portfolio-grid">';
+        
+        Object.keys(portfolioDistribution).forEach(portfolio => {
+            const data = portfolioDistribution[portfolio];
+            const sharePercentage = ((data.shares / totalShares) * 100).toFixed(1);
+            const stockPercentage = ((data.stocks / totalStocks) * 100).toFixed(1);
+            
+            detailHtml += `
+                <div class="portfolio-item">
+                    <h5>${portfolio}</h5>
+                    <p><strong>Holdings:</strong> ${data.stocks} (${stockPercentage}%)</p>
+                    <p><strong>Shares:</strong> ${data.shares.toLocaleString()} (${sharePercentage}%)</p>
+                    <p><strong>Avg Shares/Holding:</strong> ${Math.round(data.shares / data.stocks).toLocaleString()}</p>
+                </div>
+            `;
+        });
+        
+        detailHtml += '</div>';
+        
+        // Snapshot trend analysis
+        if (snapshots.length > 0) {
+            detailHtml += '<h4>Historical Trends</h4>';
+            detailHtml += '<p>Analysis of portfolio snapshots over time:</p>';
+            
+            const sortedSnapshots = snapshots.sort((a, b) => new Date(a.date) - new Date(b.date));
+            const latest = sortedSnapshots[sortedSnapshots.length - 1];
+            const oldest = sortedSnapshots[0];
+            
+            detailHtml += '<div class="portfolio-grid">';
+            detailHtml += `
+                <div class="portfolio-item">
+                    <h5>Overall Trend</h5>
+                    <p><strong>Snapshots:</strong> ${snapshots.length}</p>
+                    <p><strong>Latest:</strong> ${latest.totalStocks} holdings, ${latest.totalShares.toLocaleString()} shares</p>
+                    <p><strong>First:</strong> ${oldest.totalStocks} holdings, ${oldest.totalShares.toLocaleString()} shares</p>
+                    <p><strong>Change:</strong> ${latest.totalStocks - oldest.totalStocks} holdings, ${(latest.totalShares - oldest.totalShares).toLocaleString()} shares</p>
+                </div>
+            `;
+            
+            // Portfolio-specific trends
+            const allPortfolios = new Set();
+            snapshots.forEach(snapshot => {
+                Object.keys(snapshot.portfolios).forEach(portfolio => allPortfolios.add(portfolio));
+            });
+            
+            allPortfolios.forEach(portfolio => {
+                const portfolioSnapshots = snapshots.filter(s => s.portfolios[portfolio]).map(s => ({
+                    date: s.date,
+                    ...s.portfolios[portfolio]
+                }));
+                
+                if (portfolioSnapshots.length > 1) {
+                    const latestP = portfolioSnapshots[portfolioSnapshots.length - 1];
+                    const oldestP = portfolioSnapshots[0];
+                    
+                    detailHtml += `
+                        <div class="portfolio-item">
+                            <h5>${portfolio} Trend</h5>
+                            <p><strong>Snapshots:</strong> ${portfolioSnapshots.length}</p>
+                            <p><strong>Latest:</strong> ${latestP.stockCount} holdings, ${latestP.totalShares.toLocaleString()} shares</p>
+                            <p><strong>First:</strong> ${oldestP.stockCount} holdings, ${oldestP.totalShares.toLocaleString()} shares</p>
+                            <p><strong>Change:</strong> ${latestP.stockCount - oldestP.stockCount} holdings, ${(latestP.totalShares - oldestP.totalShares).toLocaleString()} shares</p>
+                        </div>
+                    `;
+                }
+            });
+            
+            detailHtml += '</div>';
+        }
+        
+        document.getElementById('portfolioAnalytics').innerHTML = detailHtml;
+    }
+
+    function loadHistoricalData() {
+        try {
+            displayHistoricalData(portfolioSnapshots);
+        } catch (error) {
+            console.error('Error loading historical data:', error);
+            document.getElementById('historicalSummary').innerHTML = '<p>Error loading historical data</p>';
+        }
+    }
+
+    function displayHistoricalData(snapshots) {
+        const historicalSummary = document.getElementById('historicalSummary');
+        
+        if (snapshots.length === 0) {
+            historicalSummary.innerHTML = '<p>No historical snapshots available. Create snapshots from the Setup tab to track changes over time.</p>';
+            return;
+        }
+        
+        // Sort snapshots by date (newest first)
+        snapshots.sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        let html = `<h4>Portfolio Snapshots (${snapshots.length} total)</h4>`;
+        html += '<div style="max-height: 400px; overflow-y: auto;">';
+        
+        snapshots.forEach(snapshot => {
+            const date = new Date(snapshot.date).toLocaleString();
+            html += `
+                <div style="background: #f8f9fa; border: 1px solid #ddd; border-radius: 5px; padding: 15px; margin: 10px 0;">
+                    <h5>${date}</h5>
+                    <p><strong>Total:</strong> ${snapshot.totalStocks} holdings, ${snapshot.totalShares.toLocaleString()} shares, ${snapshot.totalAccounts} accounts</p>
+                    <div style="margin-top: 10px;">
+                        <h6>Portfolios:</h6>
+            `;
+            
+            Object.keys(snapshot.portfolios).forEach(portfolio => {
+                const data = snapshot.portfolios[portfolio];
+                html += `
+                    <div style="margin: 5px 0; padding: 5px; background: white; border-radius: 3px;">
+                        <strong>${portfolio}</strong> - 
+                        ${data.stockCount} holdings, 
+                        ${data.totalShares.toLocaleString()} shares
+                    </div>
+                `;
+            });
+            
+            html += '</div></div>';
+        });
+        
+        html += '</div>';
+        historicalSummary.innerHTML = html;
+    }
+
+    // Initialize application
+    function initApp() {
+        console.log('Initializing application...');
+        
+        // Set a timeout to catch hanging initialization
+        setTimeout(() => {
+            const statusElement = document.getElementById('storageStatusText');
+            if (statusElement && statusElement.textContent === 'Initializing...') {
+                console.log('Initialization timeout - forcing completion');
+                statusElement.textContent = 'Storage ready (fallback mode)';
+                initializeDefaultCategories();
+            }
+        }, 3000);
+        
+        try {
+            initStorage();
+        } catch (error) {
+            console.error('Error initializing app:', error);
+            document.getElementById('storageStatusText').textContent = 'Error initializing storage - using fallback mode';
+            initializeDefaultCategories();
+        }
+    }
+
+    // Start the application
+    window.addEventListener('load', initApp);
+</script>
 ```
+
+</body>
+</html>
