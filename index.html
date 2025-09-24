@@ -1101,6 +1101,365 @@
         console.log(`Updated purchase price for ${ticker}: ${price}`);
     }
 
+    // Enhanced analytics
+    function loadAnalytics() {
+        console.log('📈 Loading analytics...');
+        
+        const holdings = window.PortfolioApp.data.holdings;
+        const prices = window.PortfolioApp.data.prices;
+        
+        if (!holdings || holdings.length === 0) {
+            document.getElementById('analyticsContent').innerHTML = 
+                '<p>No portfolio data available. Please import CSV file first.</p>';
+            return;
+        }
+        
+        // Calculate basic analytics
+        const totalHoldings = holdings.length;
+        const totalAccounts = new Set(holdings.map(h => h.account)).size;
+        const totalShares = holdings.reduce((sum, h) => sum + h.volume, 0);
+        const uniqueStocks = new Set(holdings.map(h => h.ticker)).size;
+        const stocksWithPrices = Object.keys(prices).length;
+        
+        // Calculate total portfolio value
+        let totalValue = 0;
+        let stocksValued = 0;
+        
+        holdings.forEach(holding => {
+            const priceData = prices[holding.ticker];
+            if (priceData && priceData.currentPrice) {
+                totalValue += holding.volume * priceData.currentPrice;
+                stocksValued++;
+            }
+        });
+        
+        // Display KPIs
+        const kpisHtml = `
+            <div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; text-align: center;">
+                <div style="font-size: 1.5em; font-weight: bold; color: #007AFF;">${totalAccounts}</div>
+                <div style="color: #666;">Accounts</div>
+            </div>
+            <div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; text-align: center;">
+                <div style="font-size: 1.5em; font-weight: bold; color: #007AFF;">${totalHoldings}</div>
+                <div style="color: #666;">Total Holdings</div>
+            </div>
+            <div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; text-align: center;">
+                <div style="font-size: 1.5em; font-weight: bold; color: #007AFF;">${uniqueStocks}</div>
+                <div style="color: #666;">Unique Stocks</div>
+            </div>
+            <div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; text-align: center;">
+                <div style="font-size: 1.5em; font-weight: bold; color: #007AFF;">${stocksWithPrices}/${uniqueStocks}</div>
+                <div style="color: #666;">Stocks with Prices</div>
+            </div>
+            <div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; text-align: center;">
+                <div style="font-size: 1.5em; font-weight: bold; color: #007AFF;">${totalShares.toLocaleString()}</div>
+                <div style="color: #666;">Total Shares</div>
+            </div>
+            <div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; text-align: center;">
+                <div style="font-size: 1.5em; font-weight: bold; color: ${totalValue > 0 ? '#28a745' : '#6c757d'};">${totalValue > 0 ? totalValue.toLocaleString() : 'N/A'}</div>
+                <div style="color: #666;">Portfolio Value</div>
+            </div>
+        `;
+        
+        document.getElementById('analyticsKPIs').innerHTML = kpisHtml;
+        
+        // Display detailed breakdown
+        const detailsHtml = `
+            <div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-top: 20px;">
+                <h4>Portfolio Breakdown by Account</h4>
+                ${generateAccountBreakdown(holdings, prices)}
+            </div>
+        `;
+        
+        document.getElementById('analyticsDetails').innerHTML = detailsHtml;
+    }
+
+    function generateAccountBreakdown(holdings, prices) {
+        const accounts = {};
+        
+        holdings.forEach(holding => {
+            if (!accounts[holding.account]) {
+                accounts[holding.account] = { holdings: [], totalShares: 0, totalValue: 0 };
+            }
+            
+            const priceData = prices[holding.ticker];
+            const value = priceData && priceData.currentPrice ? 
+                holding.volume * priceData.currentPrice : 0;
+            
+            accounts[holding.account].holdings.push({
+                ...holding,
+                currentValue: value
+            });
+            accounts[holding.account].totalShares += holding.volume;
+            accounts[holding.account].totalValue += value;
+        });
+        
+        let html = '';
+        Object.keys(accounts).forEach(accountNum => {
+            const account = accounts[accountNum];
+            html += `
+                <div style="margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 5px;">
+                    <h5>Account ${accountNum}</h5>
+                    <p><strong>Holdings:</strong> ${account.holdings.length} | 
+                       <strong>Shares:</strong> ${account.totalShares.toLocaleString()} | 
+                       <strong>Value:</strong> ${account.totalValue > 0 ? account.totalValue.toLocaleString() : 'N/A'}</p>
+                    <div style="max-height: 150px; overflow-y: auto;">
+            `;
+            
+            account.holdings.forEach(holding => {
+                html += `
+                    <div style="font-size: 0.9em; margin: 2px 0;">
+                        <strong>${holding.ticker}</strong>: ${holding.volume.toLocaleString()} shares
+                        ${holding.currentValue > 0 ? ` (Value: ${holding.currentValue.toLocaleString()})` : ''}
+                    </div>
+                `;
+            });
+            
+            html += '</div></div>';
+        });
+        
+        return html;
+    }
+
+    // Initialize system
+    function initSystem() {
+        console.log('⚡ Initializing system...');
+        document.getElementById('systemStatusText').textContent = 'Ready - Import CSV to begin';
+        console.log('✅ System initialized successfully');
+    }
+
+    // Start initialization
+    initSystem();
+</script>
+
+<!-- Yahoo Finance Module -->
+<script>
+    console.log('📡 Loading Yahoo Finance module...');
+    
+    // Yahoo Finance API Module
+    window.YahooFinance = (function() {
+        let isUpdating = false;
+
+        async function fetchStockPrice(ticker) {
+            try {
+                console.log(`🔍 Fetching price for ${ticker}...`);
+                
+                // Use CORS proxy
+                const proxyUrl = 'https://api.allorigins.win/raw?url=';
+                const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`;
+                const url = proxyUrl + encodeURIComponent(yahooUrl);
+                
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.chart && data.chart.result && data.chart.result.length > 0) {
+                    const result = data.chart.result[0];
+                    const currentPrice = result.meta.regularMarketPrice;
+                    const currency = result.meta.currency;
+                    
+                    return {
+                        price: currentPrice,
+                        currency: currency ? currency.toUpperCase() : 'USD',
+                        success: true
+                    };
+                } else {
+                    throw new Error('No price data found');
+                }
+            } catch (error) {
+                console.error(`❌ Error fetching price for ${ticker}:`, error.message);
+                return {
+                    price: null,
+                    currency: null,
+                    success: false,
+                    error: error.message
+                };
+            }
+        }
+
+        async function testTicker(ticker) {
+            // Simple test function - just tries to fetch price without storing
+            console.log(`🧪 Testing ticker: ${ticker}`);
+            return await fetchStockPrice(ticker);
+        }
+
+        async function fetchAllPrices() {
+            if (isUpdating) {
+                alert('Price update already in progress. Please wait...');
+                return;
+            }
+
+            const holdings = window.PortfolioApp.data.holdings;
+            if (!holdings || holdings.length === 0) {
+                alert('No portfolio data available. Please import CSV first.');
+                return;
+            }
+
+            const uniqueTickers = [...new Set(holdings.map(h => h.ticker))];
+            console.log(`🔄 Starting price update for ${uniqueTickers.length} tickers`);
+
+            isUpdating = true;
+            document.getElementById('yahooStatus').textContent = 'Updating prices...';
+            
+            let successCount = 0;
+            let failCount = 0;
+            const errors = [];
+
+            try {
+                // Update in batches of 3 (smaller batches for reliability)
+                const batchSize = 3;
+                for (let i = 0; i < uniqueTickers.length; i += batchSize) {
+                    const batch = uniqueTickers.slice(i, i + batchSize);
+                    
+                    document.getElementById('yahooStatus').textContent = 
+                        `Updating ${i + 1}-${Math.min(i + batchSize, uniqueTickers.length)} of ${uniqueTickers.length}...`;
+                    
+                    // Process batch
+                    const promises = batch.map(ticker => fetchStockPrice(ticker));
+                    const results = await Promise.all(promises);
+                    
+                    // Store results
+                    results.forEach((result, index) => {
+                        const ticker = batch[index];
+                        
+                        if (!window.PortfolioApp.data.prices[ticker]) {
+                            window.PortfolioApp.data.prices[ticker] = {};
+                        }
+                        
+                        if (result.success) {
+                            window.PortfolioApp.data.prices[ticker].currentPrice = result.price;
+                            window.PortfolioApp.data.prices[ticker].currency = result.currency;
+                            window.PortfolioApp.data.prices[ticker].lastUpdated = new Date().toISOString();
+                            window.PortfolioApp.data.prices[ticker].source = 'Yahoo Finance';
+                            successCount++;
+                            console.log(`✅ ${ticker}: ${result.price} ${result.currency}`);
+                        } else {
+                            failCount++;
+                            errors.push(`${ticker}: ${result.error}`);
+                            console.log(`❌ ${ticker}: ${result.error}`);
+                        }
+                    });
+                    
+                    // Delay between batches
+                    if (i + batchSize < uniqueTickers.length) {
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                    }
+                }
+                
+                // Update UI
+                const now = new Date().toLocaleString();
+                document.getElementById('yahooStatus').textContent = 
+                    `Completed: ${successCount} updated, ${failCount} failed`;
+                document.getElementById('lastYahooUpdate').textContent = now;
+                
+                // Update price table if visible
+                if (document.getElementById('priceTableSection').style.display === 'block') {
+                    displayPriceTable();
+                }
+                
+                // Show results
+                let message = `Price update completed!\n\n`;
+                message += `✅ Successfully updated: ${successCount} stocks\n`;
+                if (failCount > 0) {
+                    message += `❌ Failed to update: ${failCount} stocks\n\n`;
+                    if (errors.length > 0) {
+                        message += `Sample errors:\n${errors.slice(0, 3).join('\n')}`;
+                    }
+                }
+                
+                alert(message);
+                
+            } catch (error) {
+                console.error('Error in batch update:', error);
+                document.getElementById('yahooStatus').textContent = 'Update failed';
+                alert('Error updating prices: ' + error.message);
+            } finally {
+                isUpdating = false;
+            }
+        }
+
+        async function fetchSinglePrice(ticker, buttonElement) {
+            if (isUpdating) return;
+            
+            const originalText = buttonElement.textContent;
+            buttonElement.textContent = 'Updating...';
+            buttonElement.disabled = true;
+            
+            try {
+                const result = await fetchStockPrice(ticker);
+                
+                if (!window.PortfolioApp.data.prices[ticker]) {
+                    window.PortfolioApp.data.prices[ticker] = {};
+                }
+                
+                if (result.success) {
+                    window.PortfolioApp.data.prices[ticker].currentPrice = result.price;
+                    window.PortfolioApp.data.prices[ticker].currency = result.currency;
+                    window.PortfolioApp.data.prices[ticker].lastUpdated = new Date().toISOString();
+                    window.PortfolioApp.data.prices[ticker].source = 'Yahoo Finance';
+                    
+                    buttonElement.textContent = 'Updated!';
+                    setTimeout(() => {
+                        buttonElement.textContent = originalText;
+                        buttonElement.disabled = false;
+                    }, 2000);
+                    
+                    // Refresh table row
+                    displayPriceTable();
+                    console.log(`✅ ${ticker} updated: ${result.price} ${result.currency}`);
+                } else {
+                    buttonElement.textContent = 'Failed';
+                    setTimeout(() => {
+                        buttonElement.textContent = originalText;
+                        buttonElement.disabled = false;
+                    }, 2000);
+                    console.log(`❌ ${ticker} failed: ${result.error}`);
+                }
+            } catch (error) {
+                buttonElement.textContent = 'Error';
+                setTimeout(() => {
+                    buttonElement.textContent = originalText;
+                    buttonElement.disabled = false;
+                }, 2000);
+                console.error('Error in single price update:', error);
+            }
+        }
+
+        // Public API
+        return {
+            fetchAllPrices,
+            fetchSinglePrice,
+            testTicker
+        };
+    })();
+
+    console.log('✅ Yahoo Finance module loaded');
+</script>
+```
+
+</body>
+</html></td>
+                    <td>${priceData.currency || 'N/A'}</td>
+                    <td>
+                        <small>${priceData.lastUpdated ? new Date(priceData.lastUpdated).toLocaleTimeString() : 'Never'}</small>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+```
+    function updatePurchasePrice(ticker, price) {
+        if (!window.PortfolioApp.data.prices[ticker]) {
+            window.PortfolioApp.data.prices[ticker] = {};
+        }
+        window.PortfolioApp.data.prices[ticker].purchasePrice = parseFloat(price) || 0;
+        console.log(`Updated purchase price for ${ticker}: ${price}`);
+    }
+
     // Initialize system status
     document.getElementById('systemStatusText').textContent = 'Ready - Import CSV to begin';
     console.log('✅ Base system initialized');
