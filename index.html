@@ -184,6 +184,31 @@
             <div id="importResults" style="display: none;">
                 <h4>Import Results</h4>
                 <div id="importSummary"></div>
+                
+                <!-- Ticker Correction Section -->
+                <div id="tickerCorrection" style="display: none; margin-top: 20px;">
+                    <h4>Ticker Verification & Correction</h4>
+                    <p>Review and correct Yahoo Finance tickers before fetching prices:</p>
+                    <div style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead style="background: #f8f9fa; position: sticky; top: 0;">
+                                <tr>
+                                    <th style="border: 1px solid #ddd; padding: 8px; width: 20%;">Original Symbol</th>
+                                    <th style="border: 1px solid #ddd; padding: 8px; width: 25%;">Company Name</th>
+                                    <th style="border: 1px solid #ddd; padding: 8px; width: 25%;">Yahoo Ticker</th>
+                                    <th style="border: 1px solid #ddd; padding: 8px; width: 15%;">Status</th>
+                                    <th style="border: 1px solid #ddd; padding: 8px; width: 15%;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tickerCorrectionTable">
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <button onclick="validateAllTickers()" style="background-color: #17a2b8;">🔍 Test All Tickers</button>
+                        <button onclick="saveTickerCorrections()" style="background-color: #28a745;">✅ Save Corrections</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -233,7 +258,12 @@
         <div class="section">
             <h3>Portfolio Analytics</h3>
             <div id="analyticsContent">
-                <p>Analytics will be displayed here once portfolio data is imported and prices are fetched.</p>
+                <div id="analyticsKPIs" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0;">
+                    <!-- KPI cards will be populated here -->
+                </div>
+                <div id="analyticsDetails">
+                    <!-- Detailed analytics will be populated here -->
+                </div>
             </div>
         </div>
     </div>
@@ -344,7 +374,319 @@
         return mappings[symbol] || symbol + '.ST'; // Default to Swedish exchange
     }
 
-    function displayImportResults(holdings) {
+    // Enhanced CSV parser
+    function parseCSV(csvText) {
+        const lines = csvText.split('\n').filter(line => line.trim());
+        if (lines.length < 2) {
+            alert('Invalid CSV file');
+            return;
+        }
+
+        const headers = lines[0].split(';');
+        console.log('CSV Headers:', headers);
+
+        // Find required columns with more flexible matching
+        const accountIndex = headers.findIndex(h => 
+            h.toLowerCase().includes('konto') || 
+            h.toLowerCase().includes('account') ||
+            h.toLowerCase().includes('depot')
+        );
+        const symbolIndex = headers.findIndex(h => 
+            h.toLowerCase().includes('kortnamn') || 
+            h.toLowerCase().includes('symbol') ||
+            h.toLowerCase().includes('ticker')
+        );
+        const nameIndex = headers.findIndex(h => 
+            h.toLowerCase().includes('namn') || 
+            h.toLowerCase().includes('name') ||
+            h.toLowerCase().includes('instrument')
+        );
+        const volumeIndex = headers.findIndex(h => 
+            h.toLowerCase().includes('volym') || 
+            h.toLowerCase().includes('antal') ||
+            h.toLowerCase().includes('shares') ||
+            h.toLowerCase().includes('quantity')
+        );
+        const isinIndex = headers.findIndex(h => h.toLowerCase().includes('isin'));
+
+        if (accountIndex === -1 || symbolIndex === -1 || volumeIndex === -1) {
+            alert('Required columns not found. Expected: account, symbol, volume');
+            console.log('Available headers:', headers);
+            return;
+        }
+
+        // Parse data with enhanced ticker conversion
+        const holdings = [];
+        for (let i = 1; i < lines.length; i++) {
+            const row = lines[i].split(';');
+            const account = row[accountIndex]?.trim();
+            const symbol = row[symbolIndex]?.trim();
+            const volume = parseFloat(row[volumeIndex]?.trim());
+            const name = row[nameIndex]?.trim();
+            const isin = row[isinIndex]?.trim();
+
+            if (account && symbol && !isNaN(volume) && volume > 0) {
+                const tickerInfo = convertToYahooTicker(symbol, isin);
+                
+                holdings.push({
+                    account: account,
+                    symbol: symbol,
+                    name: name || symbol,
+                    volume: Math.round(volume),
+                    isin: isin || '',
+                    ticker: tickerInfo.ticker,
+                    tickerConfidence: tickerInfo.confidence,
+                    tickerSource: tickerInfo.source,
+                    originalTicker: tickerInfo.ticker // Store original for corrections
+                });
+            }
+        }
+
+        // Store in global state
+        window.PortfolioApp.data.holdings = holdings;
+        console.log(`📊 Parsed ${holdings.length} holdings from CSV`);
+
+        // Display results and show ticker correction interface
+        displayImportResults(holdings);
+        displayTickerCorrection(holdings);
+    }
+
+    function displayTickerCorrection(holdings) {
+        const correctionDiv = document.getElementById('tickerCorrection');
+        const tableBody = document.getElementById('tickerCorrectionTable');
+        
+        // Get unique stocks for correction
+        const uniqueStocks = [];
+        const seen = new Set();
+        
+        holdings.forEach(holding => {
+            if (!seen.has(holding.symbol)) {
+                seen.add(holding.symbol);
+                uniqueStocks.push(holding);
+            }
+        });
+
+        tableBody.innerHTML = '';
+        
+        uniqueStocks.forEach((stock, index) => {
+            const row = document.createElement('tr');
+            
+            // Color code by confidence
+            const bgColor = stock.tickerConfidence === 'high' ? '#e8f5e8' : 
+                           stock.tickerConfidence === 'medium' ? '#fff3cd' : '#f8d7da';
+            
+            row.style.backgroundColor = bgColor;
+            row.innerHTML = `
+                <td style="border: 1px solid #ddd; padding: 8px;"><strong>${stock.symbol}</strong></td>
+                <td style="border: 1px solid #ddd; padding: 8px;">${stock.name}</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">
+                    <input type="text" id="ticker-${index}" value="${stock.ticker}" 
+                           style="width: 90%; padding: 4px;" 
+                           onchange="updateTicker('${stock.symbol}', this.value)">
+                </td>
+                <td style="border: 1px solid #ddd; padding: 8px;">
+                    <span id="status-${index}" style="font-size: 0.9em;">
+                        ${stock.tickerConfidence === 'high' ? '✅ High' : 
+                          stock.tickerConfidence === 'medium' ? '⚠️ Medium' : '❌ Low'}
+                    </span>
+                </td>
+                <td style="border: 1px solid #ddd; padding: 8px;">
+                    <button onclick="testSingleTicker('${stock.ticker}', ${index})" 
+                            style="font-size: 12px; padding: 4px 8px;">Test</button>
+                </td>
+            `;
+            tableBody.appendChild(row);
+        });
+
+        correctionDiv.style.display = 'block';
+    }
+
+    function updateTicker(originalSymbol, newTicker) {
+        // Update all holdings with this symbol
+        window.PortfolioApp.data.holdings.forEach(holding => {
+            if (holding.symbol === originalSymbol) {
+                holding.ticker = newTicker.trim();
+            }
+        });
+        console.log(`Updated ticker for ${originalSymbol}: ${newTicker}`);
+    }
+
+    async function testSingleTicker(ticker, index) {
+        const statusElement = document.getElementById(`status-${index}`);
+        statusElement.innerHTML = '🔄 Testing...';
+        
+        try {
+            const result = await YahooFinance.testTicker(ticker);
+            if (result.success) {
+                statusElement.innerHTML = `✅ Valid (${result.price} ${result.currency})`;
+            } else {
+                statusElement.innerHTML = `❌ Invalid (${result.error})`;
+            }
+        } catch (error) {
+            statusElement.innerHTML = `❌ Error`;
+        }
+    }
+
+    async function validateAllTickers() {
+        const holdings = window.PortfolioApp.data.holdings;
+        const uniqueTickers = [...new Set(holdings.map(h => h.ticker))];
+        
+        document.getElementById('systemStatusText').textContent = `Testing ${uniqueTickers.length} tickers...`;
+        
+        let validCount = 0;
+        let invalidCount = 0;
+        
+        for (let i = 0; i < uniqueTickers.length; i++) {
+            const ticker = uniqueTickers[i];
+            const result = await YahooFinance.testTicker(ticker);
+            
+            if (result.success) {
+                validCount++;
+            } else {
+                invalidCount++;
+            }
+            
+            // Update progress
+            document.getElementById('systemStatusText').textContent = 
+                `Testing ${i + 1}/${uniqueTickers.length}: ${validCount} valid, ${invalidCount} invalid`;
+            
+            // Small delay to avoid overwhelming API
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        document.getElementById('systemStatusText').textContent = 
+            `Ticker validation complete: ${validCount} valid, ${invalidCount} invalid`;
+        
+        alert(`Ticker validation complete:\n✅ Valid: ${validCount}\n❌ Invalid: ${invalidCount}\n\nCorrect any invalid tickers before fetching prices.`);
+    }
+
+    function saveTickerCorrections() {
+        const holdings = window.PortfolioApp.data.holdings;
+        const uniqueCount = new Set(holdings.map(h => h.ticker)).size;
+        
+        document.getElementById('systemStatusText').textContent = 
+            `Ticker corrections saved - ${holdings.length} holdings with ${uniqueCount} unique tickers`;
+            
+        alert('Ticker corrections saved! You can now fetch prices from the Price Management tab.');
+    }
+
+    // Enhanced analytics
+    function loadAnalytics() {
+        const holdings = window.PortfolioApp.data.holdings;
+        const prices = window.PortfolioApp.data.prices;
+        
+        if (!holdings || holdings.length === 0) {
+            document.getElementById('analyticsContent').innerHTML = 
+                '<p>No portfolio data available. Please import CSV file first.</p>';
+            return;
+        }
+        
+        // Calculate basic analytics
+        const totalHoldings = holdings.length;
+        const totalAccounts = new Set(holdings.map(h => h.account)).size;
+        const totalShares = holdings.reduce((sum, h) => sum + h.volume, 0);
+        const uniqueStocks = new Set(holdings.map(h => h.ticker)).size;
+        const stocksWithPrices = Object.keys(prices).length;
+        
+        // Calculate total portfolio value
+        let totalValue = 0;
+        let stocksValued = 0;
+        
+        holdings.forEach(holding => {
+            const priceData = prices[holding.ticker];
+            if (priceData && priceData.currentPrice) {
+                totalValue += holding.volume * priceData.currentPrice;
+                stocksValued++;
+            }
+        });
+        
+        // Display KPIs
+        const kpisHtml = `
+            <div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; text-align: center;">
+                <div style="font-size: 1.5em; font-weight: bold; color: #007AFF;">${totalAccounts}</div>
+                <div style="color: #666;">Accounts</div>
+            </div>
+            <div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; text-align: center;">
+                <div style="font-size: 1.5em; font-weight: bold; color: #007AFF;">${totalHoldings}</div>
+                <div style="color: #666;">Total Holdings</div>
+            </div>
+            <div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; text-align: center;">
+                <div style="font-size: 1.5em; font-weight: bold; color: #007AFF;">${uniqueStocks}</div>
+                <div style="color: #666;">Unique Stocks</div>
+            </div>
+            <div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; text-align: center;">
+                <div style="font-size: 1.5em; font-weight: bold; color: #007AFF;">${stocksWithPrices}/${uniqueStocks}</div>
+                <div style="color: #666;">Stocks with Prices</div>
+            </div>
+            <div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; text-align: center;">
+                <div style="font-size: 1.5em; font-weight: bold; color: #007AFF;">${totalShares.toLocaleString()}</div>
+                <div style="color: #666;">Total Shares</div>
+            </div>
+            <div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; text-align: center;">
+                <div style="font-size: 1.5em; font-weight: bold; color: ${totalValue > 0 ? '#28a745' : '#6c757d'};">${totalValue > 0 ? totalValue.toLocaleString() : 'N/A'}</div>
+                <div style="color: #666;">Portfolio Value</div>
+            </div>
+        `;
+        
+        document.getElementById('analyticsKPIs').innerHTML = kpisHtml;
+        
+        // Display detailed breakdown
+        const detailsHtml = `
+            <div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-top: 20px;">
+                <h4>Portfolio Breakdown by Account</h4>
+                ${generateAccountBreakdown(holdings, prices)}
+            </div>
+        `;
+        
+        document.getElementById('analyticsDetails').innerHTML = detailsHtml;
+    }
+
+    function generateAccountBreakdown(holdings, prices) {
+        const accounts = {};
+        
+        holdings.forEach(holding => {
+            if (!accounts[holding.account]) {
+                accounts[holding.account] = { holdings: [], totalShares: 0, totalValue: 0 };
+            }
+            
+            const priceData = prices[holding.ticker];
+            const value = priceData && priceData.currentPrice ? 
+                holding.volume * priceData.currentPrice : 0;
+            
+            accounts[holding.account].holdings.push({
+                ...holding,
+                currentValue: value
+            });
+            accounts[holding.account].totalShares += holding.volume;
+            accounts[holding.account].totalValue += value;
+        });
+        
+        let html = '';
+        Object.keys(accounts).forEach(accountNum => {
+            const account = accounts[accountNum];
+            html += `
+                <div style="margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 5px;">
+                    <h5>Account ${accountNum}</h5>
+                    <p><strong>Holdings:</strong> ${account.holdings.length} | 
+                       <strong>Shares:</strong> ${account.totalShares.toLocaleString()} | 
+                       <strong>Value:</strong> ${account.totalValue > 0 ? account.totalValue.toLocaleString() : 'N/A'}</p>
+                    <div style="max-height: 150px; overflow-y: auto;">
+            `;
+            
+            account.holdings.forEach(holding => {
+                html += `
+                    <div style="font-size: 0.9em; margin: 2px 0;">
+                        <strong>${holding.ticker}</strong>: ${holding.volume.toLocaleString()} shares
+                        ${holding.currentValue > 0 ? ` (Value: ${holding.currentValue.toLocaleString()})` : ''}
+                    </div>
+                `;
+            });
+            
+            html += '</div></div>';
+        });
+        
+        return html;
+    }
         const resultsDiv = document.getElementById('importResults');
         const summaryDiv = document.getElementById('importSummary');
         
@@ -370,14 +712,322 @@
         holdings.forEach(holding => {
             html += `
                 <tr>
+    function displayImportResults(holdings) {
+        const resultsDiv = document.getElementById('importResults');
+        const summaryDiv = document.getElementById('importSummary');
+        
+        // Group by confidence level for summary
+        const confidenceGroups = {
+            high: holdings.filter(h => h.tickerConfidence === 'high').length,
+            medium: holdings.filter(h => h.tickerConfidence === 'medium').length,
+            low: holdings.filter(h => h.tickerConfidence === 'low').length
+        };
+        
+        let html = `
+            <div class="success">
+                <p><strong>Successfully imported:</strong> ${holdings.length} holdings</p>
+                <p><strong>Unique accounts:</strong> ${new Set(holdings.map(h => h.account)).size}</p>
+                <p><strong>Unique stocks:</strong> ${new Set(holdings.map(h => h.ticker)).size}</p>
+            </div>
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 10px 0;">
+                <h5>Ticker Confidence Summary:</h5>
+                <p>
+                    ✅ <strong>High confidence:</strong> ${confidenceGroups.high} stocks (exact mappings)<br>
+                    ⚠️ <strong>Medium confidence:</strong> ${confidenceGroups.medium} stocks (ISIN-based)<br>
+                    ❌ <strong>Low confidence:</strong> ${confidenceGroups.low} stocks (fallback - needs review)
+                </p>
+            </div>
+            <div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 10px;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 5px;">Account</th>
+                            <th style="border: 1px solid #ddd; padding: 5px;">Original</th>
+                            <th style="border: 1px solid #ddd; padding: 5px;">Yahoo Ticker</th>
+                            <th style="border: 1px solid #ddd; padding: 5px;">Company</th>
+                            <th style="border: 1px solid #ddd; padding: 5px;">Shares</th>
+                            <th style="border: 1px solid #ddd; padding: 5px;">Confidence</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        holdings.forEach(holding => {
+            const confidenceIcon = holding.tickerConfidence === 'high' ? '✅' : 
+                                 holding.tickerConfidence === 'medium' ? '⚠️' : '❌';
+                                 
+            html += `
+                <tr>
                     <td style="border: 1px solid #ddd; padding: 5px;">${holding.account}</td>
-                    <td style="border: 1px solid #ddd; padding: 5px;"><strong>${holding.ticker}</strong></td>
+                    <td style="border: 1px solid #ddd; padding: 5px;"><strong>${holding.symbol}</strong></td>
+                    <td style="border: 1px solid #ddd; padding: 5px; color: ${holding.tickerConfidence === 'low' ? '#dc3545' : '#007AFF'};">
+                        <strong>${holding.ticker}</strong>
+                    </td>
                     <td style="border: 1px solid #ddd; padding: 5px;">${holding.name}</td>
                     <td style="border: 1px solid #ddd; padding: 5px;">${holding.volume.toLocaleString()}</td>
+                    <td style="border: 1px solid #ddd; padding: 5px; text-align: center;">${confidenceIcon}</td>
                 </tr>
             `;
         });
 
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        summaryDiv.innerHTML = html;
+        resultsDiv.style.display = 'block';
+        
+        // Enable price management and analytics
+        document.getElementById('systemStatusText').textContent = 'Ready - Portfolio imported. Review tickers before fetching prices.';
+    }
+
+    // Initialize system status
+    document.getElementById('systemStatusText').textContent = 'Ready - Import CSV to begin';
+    console.log('✅ Base system initialized');
+</script>
+
+<!-- Yahoo Finance Module -->
+<script>
+    // Yahoo Finance API Module
+    window.YahooFinance = (function() {
+        let isUpdating = false;
+
+        async function fetchStockPrice(ticker) {
+            try {
+                // Use CORS proxy
+                const proxyUrl = 'https://api.allorigins.win/raw?url=';
+                const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`;
+                const url = proxyUrl + encodeURIComponent(yahooUrl);
+                
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.chart && data.chart.result && data.chart.result.length > 0) {
+                    const result = data.chart.result[0];
+                    const currentPrice = result.meta.regularMarketPrice;
+                    const currency = result.meta.currency;
+                    
+                    return {
+                        price: currentPrice,
+                        currency: currency ? currency.toUpperCase() : 'USD',
+                        success: true
+                    };
+                } else {
+                    throw new Error('No price data found');
+                }
+            } catch (error) {
+                console.error(`Error fetching price for ${ticker}:`, error);
+                return {
+                    price: null,
+                    currency: null,
+                    success: false,
+                    error: error.message
+                };
+            }
+        }
+
+        async function testTicker(ticker) {
+            // Simple test function - just tries to fetch price without storing
+            try {
+                const proxyUrl = 'https://api.allorigins.win/raw?url=';
+                const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`;
+                const url = proxyUrl + encodeURIComponent(yahooUrl);
+                
+                const response = await fetch(url);
+                if (!response.ok) {
+                    return { success: false, error: `HTTP ${response.status}` };
+                }
+                
+                const data = await response.json();
+                
+                if (data.chart && data.chart.result && data.chart.result.length > 0) {
+                    const result = data.chart.result[0];
+                    const currentPrice = result.meta.regularMarketPrice;
+                    const currency = result.meta.currency;
+                    
+                    return {
+                        success: true,
+                        price: currentPrice,
+                        currency: currency ? currency.toUpperCase() : 'USD'
+                    };
+                } else {
+                    return { success: false, error: 'No data found' };
+                }
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function fetchAllPrices() {
+            if (isUpdating) {
+                alert('Price update already in progress. Please wait...');
+                return;
+            }
+
+            const holdings = window.PortfolioApp.data.holdings;
+            if (!holdings || holdings.length === 0) {
+                alert('No portfolio data available. Please import CSV first.');
+                return;
+            }
+
+            const uniqueTickers = [...new Set(holdings.map(h => h.ticker))];
+            console.log(`🔄 Starting price update for ${uniqueTickers.length} tickers`);
+
+            isUpdating = true;
+            document.getElementById('yahooStatus').textContent = 'Updating prices...';
+            
+            let successCount = 0;
+            let failCount = 0;
+            const errors = [];
+
+            try {
+                // Update in batches of 3 (smaller batches for reliability)
+                const batchSize = 3;
+                for (let i = 0; i < uniqueTickers.length; i += batchSize) {
+                    const batch = uniqueTickers.slice(i, i + batchSize);
+                    
+                    document.getElementById('yahooStatus').textContent = 
+                        `Updating ${i + 1}-${Math.min(i + batchSize, uniqueTickers.length)} of ${uniqueTickers.length}...`;
+                    
+                    // Process batch
+                    const promises = batch.map(ticker => fetchStockPrice(ticker));
+                    const results = await Promise.all(promises);
+                    
+                    // Store results
+                    results.forEach((result, index) => {
+                        const ticker = batch[index];
+                        
+                        if (!window.PortfolioApp.data.prices[ticker]) {
+                            window.PortfolioApp.data.prices[ticker] = {};
+                        }
+                        
+                        if (result.success) {
+                            window.PortfolioApp.data.prices[ticker].currentPrice = result.price;
+                            window.PortfolioApp.data.prices[ticker].currency = result.currency;
+                            window.PortfolioApp.data.prices[ticker].lastUpdated = new Date().toISOString();
+                            window.PortfolioApp.data.prices[ticker].source = 'Yahoo Finance';
+                            successCount++;
+                            console.log(`✅ ${ticker}: ${result.price} ${result.currency}`);
+                        } else {
+                            failCount++;
+                            errors.push(`${ticker}: ${result.error}`);
+                            console.log(`❌ ${ticker}: ${result.error}`);
+                        }
+                    });
+                    
+                    // Delay between batches
+                    if (i + batchSize < uniqueTickers.length) {
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                    }
+                }
+                
+                // Update UI
+                const now = new Date().toLocaleString();
+                document.getElementById('yahooStatus').textContent = 
+                    `Completed: ${successCount} updated, ${failCount} failed`;
+                document.getElementById('lastYahooUpdate').textContent = now;
+                
+                // Update price table if visible
+                if (document.getElementById('priceTableSection').style.display === 'block') {
+                    displayPriceTable();
+                }
+                
+                // Show results
+                let message = `Price update completed!\n\n`;
+                message += `✅ Successfully updated: ${successCount} stocks\n`;
+                if (failCount > 0) {
+                    message += `❌ Failed to update: ${failCount} stocks\n\n`;
+                    if (errors.length > 0) {
+                        message += `Sample errors:\n${errors.slice(0, 3).join('\n')}`;
+                    }
+                }
+                
+                alert(message);
+                
+            } catch (error) {
+                console.error('Error in batch update:', error);
+                document.getElementById('yahooStatus').textContent = 'Update failed';
+                alert('Error updating prices: ' + error.message);
+            } finally {
+                isUpdating = false;
+            }
+        }
+
+        async function fetchSinglePrice(ticker, buttonElement) {
+            if (isUpdating) return;
+            
+            const originalText = buttonElement.textContent;
+            buttonElement.textContent = 'Updating...';
+            buttonElement.disabled = true;
+            
+            try {
+                const result = await fetchStockPrice(ticker);
+                
+                if (!window.PortfolioApp.data.prices[ticker]) {
+                    window.PortfolioApp.data.prices[ticker] = {};
+                }
+                
+                if (result.success) {
+                    window.PortfolioApp.data.prices[ticker].currentPrice = result.price;
+                    window.PortfolioApp.data.prices[ticker].currency = result.currency;
+                    window.PortfolioApp.data.prices[ticker].lastUpdated = new Date().toISOString();
+                    window.PortfolioApp.data.prices[ticker].source = 'Yahoo Finance';
+                    
+                    buttonElement.textContent = 'Updated!';
+                    setTimeout(() => {
+                        buttonElement.textContent = originalText;
+                        buttonElement.disabled = false;
+                    }, 2000);
+                    
+                    // Refresh table row
+                    displayPriceTable();
+                    console.log(`✅ ${ticker} updated: ${result.price} ${result.currency}`);
+                } else {
+                    buttonElement.textContent = 'Failed';
+                    setTimeout(() => {
+                        buttonElement.textContent = originalText;
+                        buttonElement.disabled = false;
+                    }, 2000);
+                    console.log(`❌ ${ticker} failed: ${result.error}`);
+                }
+            } catch (error) {
+                buttonElement.textContent = 'Error';
+                setTimeout(() => {
+                    buttonElement.textContent = originalText;
+                    buttonElement.disabled = false;
+                }, 2000);
+                console.error('Error in single price update:', error);
+            }
+        }
+
+        // Public API
+        return {
+            fetchAllPrices,
+            fetchSinglePrice,
+            testTicker
+        };
+    })();
+
+    console.log('✅ Yahoo Finance module loaded');
+</script>
+```
+
+</body>
+</html> padding: 5px;">${holding.account}</td>
+                        <td style="border: 1px solid #ddd; padding: 5px;"><strong>${holding.ticker}</strong></td>
+                        <td style="border: 1px solid #ddd; padding: 5px;">${holding.name}</td>
+                        <td style="border: 1px solid #ddd; padding: 5px;">${holding.volume.toLocaleString()}</td>
+                    </tr>
+                `;
+            });
+
+```
         html += `
                     </tbody>
                 </table>
@@ -642,10 +1292,43 @@
             }
         }
 
+        async function testTicker(ticker) {
+            // Simple test function - just tries to fetch price without storing
+            try {
+                const proxyUrl = 'https://api.allorigins.win/raw?url=';
+                const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`;
+                const url = proxyUrl + encodeURIComponent(yahooUrl);
+                
+                const response = await fetch(url);
+                if (!response.ok) {
+                    return { success: false, error: `HTTP ${response.status}` };
+                }
+                
+                const data = await response.json();
+                
+                if (data.chart && data.chart.result && data.chart.result.length > 0) {
+                    const result = data.chart.result[0];
+                    const currentPrice = result.meta.regularMarketPrice;
+                    const currency = result.meta.currency;
+                    
+                    return {
+                        success: true,
+                        price: currentPrice,
+                        currency: currency ? currency.toUpperCase() : 'USD'
+                    };
+                } else {
+                    return { success: false, error: 'No data found' };
+                }
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        }
+
         // Public API
         return {
             fetchAllPrices,
-            fetchSinglePrice
+            fetchSinglePrice,
+            testTicker
         };
     })();
 
