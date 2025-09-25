@@ -170,5 +170,7 @@ window.showTab = showTab;
 window.formatCurrency = formatCurrency;
 window.formatPercentage = formatPercentage;
 window.showTickerManager = showTickerManager;
+window.fixTicker = fixTicker;
+window.closeTickers = closeTickers;
 
 console.log('Main application module loaded');
