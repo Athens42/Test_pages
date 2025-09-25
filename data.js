@@ -52,11 +52,12 @@ var tickerMappings = {
 function convertToYahooTicker(symbol, isin) {
     // Check direct mappings first
     if (tickerMappings[symbol]) {
-        return {
-            ticker: tickerMappings[symbol],
-            confidence: 'high'
-        };
+        return tickerMappings[symbol];
     }
+    
+    // Default to Swedish exchange
+    return symbol + '.ST';
+}
     
     // Use ISIN to determine exchange
     if (isin && isin.length >= 2) {
@@ -96,10 +97,10 @@ function getUniqueTickers() {
     var seen = {};
     
     portfolioData.holdings.forEach(function(holding) {
-        if (!seen[holding.ticker]) {
-            seen[holding.ticker] = true;
+        if (!seen[holding.symbol]) {
+            seen[holding.symbol] = true;
             unique.push({
-                ticker: holding.ticker,
+                ticker: holding.ticker || (holding.symbol + '.ST'),
                 name: holding.name,
                 symbol: holding.symbol
             });
@@ -108,7 +109,6 @@ function getUniqueTickers() {
     
     return unique;
 }
-
 // Get unique accounts from holdings
 function getUniqueAccounts() {
     var accounts = {};
