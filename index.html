@@ -154,18 +154,24 @@
         </div>
     </div>
 
-    <!-- Prices Tab -->
+<!-- Prices Tab -->
     <div id="prices" class="tab-content">
         <div class="section">
             <h3>Price Management</h3>
-            <button onclick="fetchAllPrices()" style="background-color: #28a745;">
+            <button onclick="fetchAllPrices()" class="btn-primary">
                 🔄 Fetch Prices from Yahoo Finance
             </button>
-            <button onclick="showPriceTable()" style="background-color: #17a2b8;">
+            <button onclick="showPriceTable()" class="btn-secondary">
                 Toggle Price Table
             </button>
+            <button onclick="showTickerManager()" class="btn-secondary">
+                🔧 Manage Tickers
+            </button>
+            <button onclick="showAutoUpdateConfig()" class="btn-secondary">
+                ⏰ Auto-Update Settings
+            </button>
             
-            <div style="margin: 10px 0; padding: 10px; background: #f0f9ff; border-radius: 5px;">
+            <div class="yahoo-status">
                 <strong>Yahoo Status:</strong> <span id="yahooStatus">Ready</span>
             </div>
             
