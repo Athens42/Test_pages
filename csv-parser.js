@@ -170,7 +170,7 @@ return {
     name: name,
     volume: Math.round(volume),
     isin: isin,
-    ticker: tickerInfo.ticker,
+    ticker: tickerInfo ? tickerInfo.ticker : (symbol + '.ST'),
     tickerConfidence: tickerInfo.confidence
 };
 ```
