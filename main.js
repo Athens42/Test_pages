@@ -1,5 +1,3 @@
-Main js-file
-
 // Main Application Logic
 console.log(‘🚀 Loading main application module…’);
 
@@ -171,14 +169,7 @@ console.error(‘💥 Application error:’, e.error);
 updateStatus(’Error: ’ + e.message);
 });
 
-// Expose functions globally for HTML onclick handlers
-window.showTab = showTab;
-window.formatCurrency = formatCurrency;
-window.formatPercentage = formatPercentage;
-
-console.log(‘✅ Main application module loaded’);
-
-// Ticker Manager - Add at end of main.js
+// Simple ticker manager function
 function showTickerManager() {
 if (portfolioData.holdings.length === 0) {
 alert(‘Please import portfolio data first’);
@@ -186,66 +177,15 @@ return;
 }
 
 ```
-var uniqueTickers = getUniqueTickers();
-var html = '<div id="tickerManager" class="section">';
-html += '<h3>🔧 Fix Incorrect Tickers</h3>';
-html += '<table><thead><tr><th>Symbol</th><th>Current Ticker</th><th>Correct Ticker</th><th>Action</th></tr></thead><tbody>';
-
-for (var i = 0; i < uniqueTickers.length; i++) {
-    var stock = uniqueTickers[i];
-    html += '<tr>';
-    html += '<td><strong>' + stock.symbol + '</strong></td>';
-    html += '<td>' + stock.ticker + '</td>';
-    html += '<td><input type="text" id="fix_' + i + '" value="' + stock.ticker + '" style="width:120px;"></td>';
-    html += '<td><button onclick="fixTicker(' + i + ')" class="btn-primary" style="padding:5px 10px;">Fix</button></td>';
-    html += '</tr>';
-}
-
-html += '</tbody></table>';
-html += '<button onclick="closeTickers()" class="btn-secondary">Close</button></div>';
-
-var container = document.querySelector('#prices .section');
-var existing = document.getElementById('tickerManager');
-if (existing) existing.remove();
-
-var div = document.createElement('div');
-div.innerHTML = html;
-container.appendChild(div);
+alert('Ticker manager works! You have ' + portfolioData.holdings.length + ' holdings loaded.');
 ```
 
 }
 
-function fixTicker(index) {
-var input = document.getElementById(‘fix_’ + index);
-var newTicker = input.value.trim().toUpperCase();
-var uniqueTickers = getUniqueTickers();
-var oldSymbol = uniqueTickers[index].symbol;
-
-```
-// Update all holdings with this symbol
-for (var i = 0; i < portfolioData.holdings.length; i++) {
-    if (portfolioData.holdings[i].symbol === oldSymbol) {
-        portfolioData.holdings[i].ticker = newTicker;
-    }
-}
-
-alert('✅ Fixed: ' + oldSymbol + ' → ' + newTicker);
-showTickerManager(); // Refresh the table
-```
-
-}
-
-function closeTickers() {
-var manager = document.getElementById(‘tickerManager’);
-if (manager) manager.remove();
-}
-
-// Make functions available globally
+// Expose functions globally for HTML onclick handlers
+window.showTab = showTab;
+window.formatCurrency = formatCurrency;
+window.formatPercentage = formatPercentage;
 window.showTickerManager = showTickerManager;
-window.fixTicker = fixTicker;
-window.closeTickers = closeTickers;
 
-// Simple ticker manager
-function showTickerManager() {
-    alert('Ticker manager clicked! Holdings: ' + portfolioData.holdings.length);
-}
+console.log(‘✅ Main application module loaded’);
