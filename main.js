@@ -11,12 +11,6 @@ document.addEventListener('DOMContentLoaded', function() {
 function initializeApplication() {
     console.log('Initializing Portfolio Management System...');
     
-    // Initialize file input handler
-    initializeFileInput();
-    
-    // Set initial status
-    updateStatus('Ready - Import your portfolio CSV to begin');
-    
     // Show setup tab by default
     showTab('setup');
     
@@ -54,42 +48,11 @@ function showTab(tabName) {
             break;
         }
     }
-    
-    // Perform tab-specific actions
-    handleTabSwitch(tabName);
 }
 
-// Handle actions when switching tabs
-function handleTabSwitch(tabName) {
-    switch(tabName) {
-        case 'setup':
-            // Nothing special needed for setup
-            break;
-            
-        case 'prices':
-            // Check if we have portfolio data
-            if (portfolioData.holdings.length === 0) {
-                updateStatus('Import portfolio data first to manage prices');
-            } else {
-                updateStatus('Portfolio loaded - ' + portfolioData.holdings.length + ' holdings ready for price updates');
-            }
-            break;
-            
-        case 'analytics':
-            // Generate analytics if we have data
-            if (portfolioData.holdings.length === 0) {
-                document.getElementById('analyticsContent').innerHTML = 
-                    '<p>Import portfolio data and fetch prices to see analytics.</p>';
-            } else {
-                generateAnalytics();
-            }
-            break;
-    }
-}
-
-// Simple ticker manager function
+// Ticker manager functions
 function showTickerManager() {
-    if (portfolioData.holdings.length === 0) {
+    if (!portfolioData || portfolioData.holdings.length === 0) {
         alert('Please import portfolio data first');
         return;
     }
@@ -143,32 +106,8 @@ function closeTickers() {
     if (manager) manager.remove();
 }
 
-// Utility function to format currency
-function formatCurrency(amount, currency) {
-    if (typeof amount !== 'number' || isNaN(amount)) {
-        return 'N/A';
-    }
-    
-    var formatted = amount.toLocaleString(undefined, {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-    });
-    
-    return formatted + ' ' + (currency || '');
-}
-
-// Utility function to format percentage
-function formatPercentage(value) {
-    if (typeof value !== 'number' || isNaN(value)) {
-        return 'N/A';
-    }
-    return value.toFixed(2) + '%';
-}
-
-// Expose functions globally for HTML onclick handlers
+// Make functions available globally
 window.showTab = showTab;
-window.formatCurrency = formatCurrency;
-window.formatPercentage = formatPercentage;
 window.showTickerManager = showTickerManager;
 window.fixTicker = fixTicker;
 window.closeTickers = closeTickers;
