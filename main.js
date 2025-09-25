@@ -244,3 +244,8 @@ if (manager) manager.remove();
 window.showTickerManager = showTickerManager;
 window.fixTicker = fixTicker;
 window.closeTickers = closeTickers;
+
+// Simple ticker manager
+function showTickerManager() {
+    alert('Ticker manager clicked! Holdings: ' + portfolioData.holdings.length);
+}
